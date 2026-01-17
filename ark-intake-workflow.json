@@ -1,0 +1,138 @@
+{
+  "name": "ARK Decision Packet Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ark/intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-entry",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "ark-intake-webhook"
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "filename",
+              "value": "=ark-decision-{{ $json.body.projectId }}-{{ $now.toISO().replace(/[:.]/g, '-') }}.json"
+            }
+          ],
+          "object": [
+            {
+              "name": "packet",
+              "value": "={{ {\n  version: 1,\n  type: \"ark.decision_packet\",\n  createdAt: $now.toISO(),\n  projectId: $json.body.projectId,\n  mode: $json.body.mode,\n  energy: $json.body.energy,\n  context: {\n    stage: $json.body.context?.stage,\n    blockers: $json.body.context?.blockers,\n    nextCheckpoint: $json.body.context?.nextCheckpoint,\n    topTasks: $json.body.context?.topTasks\n  },\n  raw: $json.body\n} }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-decision-packet",
+      "name": "Build Decision Packet",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "jsonToBinary",
+        "sourceData": "json",
+        "jsonProperty": "packet",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "convert-to-binary",
+      "name": "Convert JSON to Binary",
+      "type": "n8n-nodes-base.moveBinaryData",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "fileName": "={{ $json.filename }}",
+        "filePath": "/home/node/.n8n/files/",
+        "binaryPropertyName": "data",
+        "options": {}
+      },
+      "id": "write-file",
+      "name": "Write File",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  ok: true,\n  saved: true,\n  filename: $json.filename,\n  projectId: $('Build Decision Packet').item.json.packet.projectId\n} }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build Decision Packet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Decision Packet": {
+      "main": [
+        [
+          {
+            "node": "Convert JSON to Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert JSON to Binary": {
+      "main": [
+        [
+          {
+            "node": "Write File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write File": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -5,6 +5,16 @@ type Energy = 'low' | 'medium' | 'high'
 
 type ProjectStatus = 'Planning' | 'Building' | 'Shipping' | 'Paused'
 
+type ProjectStage = 'Planning' | 'Building' | 'Shipping' | 'Maintenance'
+
+type WorkMode = 'dev' | 'sales' | 'content'
+
+type WorkModeOutput = {
+  mode: WorkMode
+  text: string
+  createdAt: number
+}
+
 type Project = {
   id: string
   name: string
@@ -36,6 +46,20 @@ type DailyBrief = {
   generatedAt: string
 }
 
+type ProjectState = {
+  stage: ProjectStage
+  blockers: string
+  nextCheckpoint: string
+}
+
+type Milestone = {
+  id: string
+  projectId: string
+  text: string
+  done: boolean
+  createdAt: number
+}
+
 type ExportData = {
   exportedAt: string
   selectedProjectId: string
@@ -44,6 +68,10 @@ type ExportData = {
   tasks: Task[]
   logs: Log[]
   projectStatuses?: Record<string, ProjectStatus>
+  workMode?: WorkMode
+  workModeOutputs?: Record<string, WorkModeOutput>
+  projectState?: Record<string, ProjectState>
+  milestones?: Milestone[]
 }
 
 // Default projects
@@ -89,6 +117,116 @@ const STORAGE_KEYS = {
   brief: 'ark_brief_v1',
   projectStatuses: 'ark_project_status_v1',
   streak: 'ark_streak_v1',
+  workMode: 'ark_workmode_v1',
+  workModeOutputs: 'ark_workmode_output_v1',
+  projectState: 'ark_project_state_v1',
+  milestones: 'ark_milestones_v1',
+}
+
+// Preload starter data
+const preloadProjectState = (): Record<string, ProjectState> => {
+  return {
+    'amanuel-travel': {
+      stage: 'Building',
+      blockers: 'Eritrea access issues for some links; Vercel deployment stability; possible env var/build errors.',
+      nextCheckpoint: 'Site loads reliably + build passes + booking request form works.',
+    },
+    'signalcrypt': {
+      stage: 'Planning',
+      blockers: 'Need tight offer page + proof/demo assets; choose outreach channel for first leads.',
+      nextCheckpoint: 'Delivery checklist + outreach templates finalized.',
+    },
+    'strong-still': {
+      stage: 'Building',
+      blockers: 'Time/energy after work; need simple daily posting rhythm.',
+      nextCheckpoint: 'One post shipped today + logged.',
+    },
+    'ark-engine': {
+      stage: 'Shipping',
+      blockers: 'Keep scope tight; prevent overbuilding.',
+      nextCheckpoint: 'Daily use: brief + workmode + log for 3 days straight.',
+    },
+  }
+}
+
+const preloadMilestones = (): Milestone[] => {
+  const now = Date.now()
+  const milestones: Milestone[] = []
+  
+  // Amanuel Travel
+  const ataMilestones = [
+    'Vercel deployment live',
+    'Fix build errors (API/auth routes if failing)',
+    'Confirm site opens reliably on mobile networks',
+    'Add basic booking request form (flights/hotels)',
+    'Add contact CTA (WhatsApp/email)',
+    'Optimize images + performance',
+    'Decide temporary domain plan → final domain',
+  ]
+  ataMilestones.forEach((text, idx) => {
+    milestones.push({
+      id: `ata-${idx}`,
+      projectId: 'amanuel-travel',
+      text,
+      done: false,
+      createdAt: now + idx,
+    })
+  })
+
+  // SignalCrypt
+  const signalMilestones = [
+    'Offer page outline (Flash / War Room / Retainer)',
+    'Delivery checklist written',
+    '3 message templates finalized (cold/follow-up/close)',
+    'List 10 prospects',
+    'Outreach session completed (10 messages)',
+    'First delivery workflow ready',
+  ]
+  signalMilestones.forEach((text, idx) => {
+    milestones.push({
+      id: `signal-${idx}`,
+      projectId: 'signalcrypt',
+      text,
+      done: false,
+      createdAt: now + 100 + idx,
+    })
+  })
+
+  // Strong & Still
+  const strongMilestones = [
+    '7-day content plan written',
+    "Today's post drafted",
+    '1 short script ready',
+    '1 post published',
+    'Resource/freebie link added (if applicable)',
+  ]
+  strongMilestones.forEach((text, idx) => {
+    milestones.push({
+      id: `strong-${idx}`,
+      projectId: 'strong-still',
+      text,
+      done: false,
+      createdAt: now + 200 + idx,
+    })
+  })
+
+  // Ark Engine
+  const arkMilestones = [
+    'Work Modes used daily',
+    'Export backup saved',
+    'Project state maintained weekly',
+  ]
+  arkMilestones.forEach((text, idx) => {
+    milestones.push({
+      id: `ark-${idx}`,
+      projectId: 'ark-engine',
+      text,
+      done: false,
+      createdAt: now + 300 + idx,
+    })
+  })
+
+  return milestones
 }
 
 function App() {
@@ -103,6 +241,12 @@ function App() {
   const [editingNextAction, setEditingNextAction] = useState<string | null>(null)
   const [nextActionInputs, setNextActionInputs] = useState<Record<string, string>>({})
   const [projectStatuses, setProjectStatuses] = useState<Record<string, ProjectStatus>>({})
+  const [workMode, setWorkMode] = useState<WorkMode>('dev')
+  const [workModeOutputs, setWorkModeOutputs] = useState<Record<string, WorkModeOutput>>({})
+  const [currentWorkModeOutput, setCurrentWorkModeOutput] = useState<string>('')
+  const [projectState, setProjectState] = useState<Record<string, ProjectState>>({})
+  const [milestones, setMilestones] = useState<Milestone[]>([])
+  const [newMilestoneText, setNewMilestoneText] = useState('')
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -118,6 +262,36 @@ function App() {
       localStorage.getItem(STORAGE_KEYS.projectStatuses),
       {}
     )
+    const storedWorkMode = safeJSONParse<WorkMode>(
+      localStorage.getItem(STORAGE_KEYS.workMode),
+      'dev'
+    )
+    const storedWorkModeOutputs = safeJSONParse<Record<string, WorkModeOutput>>(
+      localStorage.getItem(STORAGE_KEYS.workModeOutputs),
+      {}
+    )
+    const storedProjectState = safeJSONParse<Record<string, ProjectState>>(
+      localStorage.getItem(STORAGE_KEYS.projectState),
+      {}
+    )
+    const storedMilestones = safeJSONParse<Milestone[]>(
+      localStorage.getItem(STORAGE_KEYS.milestones),
+      []
+    )
+
+    // Preload starter data if storage is empty
+    let finalProjectState = storedProjectState
+    let finalMilestones = storedMilestones
+    
+    if (Object.keys(storedProjectState).length === 0) {
+      finalProjectState = preloadProjectState()
+      localStorage.setItem(STORAGE_KEYS.projectState, JSON.stringify(finalProjectState))
+    }
+    
+    if (storedMilestones.length === 0) {
+      finalMilestones = preloadMilestones()
+      localStorage.setItem(STORAGE_KEYS.milestones, JSON.stringify(finalMilestones))
+    }
 
     setProjects(storedProjects)
     setTasks(storedTasks)
@@ -125,6 +299,10 @@ function App() {
     setSelectedProjectId(storedSettings.projectId)
     setEnergy(storedSettings.energy)
     setProjectStatuses(storedStatuses)
+    setWorkMode(storedWorkMode)
+    setWorkModeOutputs(storedWorkModeOutputs)
+    setProjectState(finalProjectState)
+    setMilestones(finalMilestones)
     if (storedBrief) {
       setDailyBrief(storedBrief)
     }
@@ -157,6 +335,26 @@ function App() {
     localStorage.setItem(STORAGE_KEYS.projectStatuses, JSON.stringify(projectStatuses))
   }, [projectStatuses])
 
+  // Save workMode to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.workMode, JSON.stringify(workMode))
+  }, [workMode])
+
+  // Save workModeOutputs to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.workModeOutputs, JSON.stringify(workModeOutputs))
+  }, [workModeOutputs])
+
+  // Save projectState to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.projectState, JSON.stringify(projectState))
+  }, [projectState])
+
+  // Save milestones to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.milestones, JSON.stringify(milestones))
+  }, [milestones])
+
   // Get tasks for current project
   const currentProjectTasks = tasks.filter(t => t.projectId === selectedProjectId)
   const openTasks = currentProjectTasks.filter(t => !t.completed).sort((a, b) => b.createdAt - a.createdAt)
@@ -171,6 +369,77 @@ function App() {
   // Get current project status (default to Planning)
   const currentProjectStatus = projectStatuses[selectedProjectId] || 'Planning'
   const isProjectPaused = currentProjectStatus === 'Paused'
+
+  // Get current project state
+  const currentProjectState = projectState[selectedProjectId] || {
+    stage: 'Planning' as ProjectStage,
+    blockers: '',
+    nextCheckpoint: '',
+  }
+
+  // Get current project milestones
+  const currentProjectMilestones = milestones
+    .filter(m => m.projectId === selectedProjectId)
+    .sort((a, b) => a.createdAt - b.createdAt)
+  
+  const milestoneProgress = {
+    done: currentProjectMilestones.filter(m => m.done).length,
+    total: currentProjectMilestones.length,
+  }
+
+  // Get last shipped log
+  const lastShippedLog = currentProjectLogs.length > 0 ? currentProjectLogs[0] : null
+  const lastShippedDisplay = lastShippedLog
+    ? `${new Date(lastShippedLog.timestamp).toLocaleString()}: ${lastShippedLog.text.split('\n')[0].slice(0, 60)}${lastShippedLog.text.split('\n')[0].length > 60 ? '...' : ''}`
+    : 'No logs yet'
+
+  // Update project state
+  const handleUpdateProjectState = (field: keyof ProjectState, value: string | ProjectStage) => {
+    if (isProjectPaused) return
+    setProjectState({
+      ...projectState,
+      [selectedProjectId]: {
+        ...currentProjectState,
+        [field]: value,
+      },
+    })
+  }
+
+  // Add milestone
+  const handleAddMilestone = () => {
+    if (!newMilestoneText.trim() || isProjectPaused) return
+    const newMilestone: Milestone = {
+      id: uid(),
+      projectId: selectedProjectId,
+      text: newMilestoneText.trim(),
+      done: false,
+      createdAt: Date.now(),
+    }
+    setMilestones([...milestones, newMilestone])
+    setNewMilestoneText('')
+  }
+
+  // Toggle milestone
+  const handleToggleMilestone = (milestoneId: string) => {
+    if (isProjectPaused) return
+    setMilestones(milestones.map(m => (m.id === milestoneId ? { ...m, done: !m.done } : m)))
+  }
+
+  // Delete milestone
+  const handleDeleteMilestone = (milestoneId: string) => {
+    if (isProjectPaused) return
+    setMilestones(milestones.filter(m => m.id !== milestoneId))
+  }
+
+  // Load last work mode output for current project
+  useEffect(() => {
+    const lastOutput = workModeOutputs[selectedProjectId]
+    if (lastOutput && lastOutput.mode === workMode) {
+      setCurrentWorkModeOutput(lastOutput.text)
+    } else {
+      setCurrentWorkModeOutput('')
+    }
+  }, [selectedProjectId, workMode, workModeOutputs])
 
   // Helper: get local date string (YYYY-MM-DD) from ISO timestamp
   const getLocalDateString = (isoTimestamp: string): string => {
@@ -379,6 +648,246 @@ function App() {
 
   const dailyPlan = generateDailyPlan()
 
+  // Generate Work Mode output
+  const generateWorkModeOutput = (): string => {
+    const selectedProject = projects.find(p => p.id === selectedProjectId)
+    if (!selectedProject) return ''
+
+    let output = ''
+
+    // Context section
+    output += 'CONTEXT\n'
+    output += `Stage: ${currentProjectState.stage}\n`
+    if (currentProjectState.blockers.trim()) {
+      const blockersShort = currentProjectState.blockers.length > 100 
+        ? currentProjectState.blockers.slice(0, 100) + '...'
+        : currentProjectState.blockers
+      output += `Blockers: ${blockersShort}\n`
+    }
+    if (currentProjectState.nextCheckpoint.trim()) {
+      output += `Next Checkpoint: ${currentProjectState.nextCheckpoint}\n`
+    }
+    output += `Milestones: ${milestoneProgress.done}/${milestoneProgress.total} done\n`
+    output += '\n'
+
+    if (workMode === 'dev') {
+      // Unblock First
+      if (currentProjectState.blockers.trim()) {
+        output += 'UNBLOCK FIRST\n'
+        output += `Address blockers: ${currentProjectState.blockers.split(';')[0].trim()}\n`
+        output += '\n'
+      }
+
+      // Mission
+      let mission = ''
+      if (energy === 'low') {
+        mission = `Focus on one small step toward: ${selectedProject.goal}`
+      } else if (energy === 'medium') {
+        mission = `Make steady progress on: ${selectedProject.goal}`
+      } else {
+        mission = `Ship something meaningful for: ${selectedProject.goal}`
+      }
+      output += `MISSION\n${mission}\n\n`
+
+      // Top 3 Actions
+      output += 'TOP 3 ACTIONS\n'
+      top3Tasks.forEach((task, index) => {
+        const action = task.nextAction || task.text
+        output += `${index + 1}. ${action}\n`
+      })
+      output += '\n'
+
+      // Build/Debug Checklist
+      output += 'BUILD/DEBUG CHECKLIST\n'
+      output += '• Run dev server\n'
+      output += '• Check console errors\n'
+      output += '• Verify build compiles\n'
+      if (selectedProjectId === 'amanuel-travel') {
+        output += '• Verify environment variables\n'
+      }
+      output += '• Check routes/navigation\n'
+      output += '• Test key user flows\n'
+      output += '\n'
+
+      // Terminal Commands
+      output += 'TERMINAL COMMANDS\n'
+      output += '```\n'
+      if (selectedProjectId === 'amanuel-travel') {
+        output += 'npm install\n'
+        output += 'npm run dev\n'
+        output += 'npm run build\n'
+        output += 'npm run lint\n'
+      } else if (selectedProjectId === 'ark-engine') {
+        output += 'npm run dev\n'
+        output += 'npm run build\n'
+      } else {
+        output += 'npm run dev\n'
+        output += 'npm run build\n'
+      }
+      output += '```\n\n'
+
+      // Definition of Done
+      output += 'DEFINITION OF DONE\n'
+      const doneCount = energy === 'low' ? 1 : energy === 'medium' ? 2 : 3
+      if (doneCount >= 1) output += '• At least one task completed\n'
+      if (doneCount >= 2) output += '• Code changes tested locally\n'
+      if (doneCount >= 3) output += '• Build passes without errors\n'
+      if (currentProjectState.nextCheckpoint.trim()) {
+        output += `• Progress toward: ${currentProjectState.nextCheckpoint}\n`
+      }
+
+    } else if (workMode === 'sales') {
+      // Unblock First
+      if (currentProjectState.blockers.trim()) {
+        output += 'UNBLOCK FIRST\n'
+        output += `Address blockers: ${currentProjectState.blockers.split(';')[0].trim()}\n`
+        output += '\n'
+      }
+
+      // Offer Snapshot
+      output += 'OFFER SNAPSHOT\n'
+      output += `• Today's focus: ${selectedProject.goal}\n`
+      if (top3Tasks.length > 0) {
+        output += `• Key deliverable: ${top3Tasks[0].text}\n`
+      }
+      output += `• Energy level: ${energy}\n`
+      if (top3Tasks.length > 1) {
+        output += `• Secondary value: ${top3Tasks[1].text}\n`
+      }
+      output += '\n'
+
+      // Client Pipeline
+      output += 'CLIENT PIPELINE\n'
+      output += '□ Lead - Identify potential client\n'
+      output += '□ Qualify - Assess fit and need\n'
+      output += '□ Confirm - Agree on scope and timeline\n'
+      output += '□ Deliver - Execute on promise\n'
+      output += '□ Collect - Receive payment/feedback\n'
+      output += '□ Review - Learn and improve\n'
+      output += '\n'
+
+      // Message Templates
+      output += 'MESSAGE TEMPLATES\n\n'
+      output += 'Cold Intro (Short)\n'
+      output += `Hi [Name], I noticed [specific observation about their business/need]. I help with ${selectedProject.goal.toLowerCase()}. Open to a quick chat this week?\n\n`
+      
+      output += 'Follow-up (24h)\n'
+      output += `Hi [Name], Following up on [previous touchpoint]. I wanted to share [specific value/insight related to ${selectedProject.goal.toLowerCase()}]. Does this align with your goals?\n\n`
+      
+      output += 'Close + Booking/Payment Request\n'
+      output += `Hi [Name], Based on our discussion, here's what I can deliver: [specific deliverable from top tasks]. Next steps: [clear action]. Ready to move forward?\n\n`
+
+      // Deliverable Checklist
+      output += 'DELIVERABLE CHECKLIST\n'
+      top3Tasks.forEach((task) => {
+        output += `• ${task.text}${task.nextAction ? ` - ${task.nextAction}` : ''}\n`
+      })
+      output += '\n'
+
+      // Next 15 Minutes
+      output += 'NEXT 15 MINUTES\n'
+      if (energy === 'low') {
+        output += '1. Review client list\n2. Send one follow-up\n3. Organize notes\n'
+      } else if (energy === 'medium') {
+        output += '1. Draft 2 outreach messages\n2. Review pipeline status\n3. Update CRM/notes\n'
+      } else {
+        output += '1. Send 3 outreach messages\n2. Schedule 2 discovery calls\n3. Prepare pitch deck\n'
+      }
+      if (currentProjectState.nextCheckpoint.trim()) {
+        output += `\nCLOSING OUTCOME\n${currentProjectState.nextCheckpoint}\n`
+      }
+
+    } else if (workMode === 'content') {
+      // Unblock First
+      if (currentProjectState.blockers.trim()) {
+        output += 'UNBLOCK FIRST\n'
+        output += `Address blockers: ${currentProjectState.blockers.split(';')[0].trim()}\n`
+        output += '\n'
+      }
+
+      // Today's Theme
+      const themeWords = top3Tasks.map(t => t.text.split(' ').slice(0, 2).join(' ')).join(', ')
+      output += `TODAY'S THEME\n${selectedProject.goal}${themeWords ? ` - ${themeWords}` : ''}\n\n`
+
+      // Hook Options
+      output += 'HOOK OPTIONS\n'
+      output += `1. ${selectedProject.goal}: The truth most people miss\n`
+      if (top3Tasks.length > 0) {
+        output += `2. How I [${top3Tasks[0].text.toLowerCase().slice(0, 30)}...] in 30 days\n`
+      }
+      output += `3. ${selectedProject.goal}: 3 lessons learned\n\n`
+
+      // Content Outline
+      output += 'CONTENT OUTLINE\n'
+      output += `• Introduction: Why ${selectedProject.goal.toLowerCase()} matters\n`
+      top3Tasks.forEach((task) => {
+        output += `• Point: ${task.text}\n`
+      })
+      output += `• Insight: What I learned\n`
+      output += `• Action: Next steps for the audience\n`
+      output += '• Conclusion: Call to engagement\n\n'
+
+      // CTA Options
+      output += 'CTA OPTIONS\n'
+      output += '1. What has been your experience with [topic]? Share below.\n'
+      output += '2. Save this for later and follow for more insights.\n'
+      output += '3. DM me if you want to dive deeper into [specific aspect].\n\n'
+
+      // Creation Plan
+      const planMinutes = energy === 'low' ? 30 : 60
+      output += `${planMinutes}-MINUTE CREATION PLAN\n`
+      if (energy === 'low') {
+        output += '1. Write draft (15 min)\n2. Edit and refine (10 min)\n3. Format and post (5 min)\n'
+      } else {
+        output += '1. Research and outline (15 min)\n2. Write full draft (25 min)\n3. Edit and refine (15 min)\n4. Format and post (5 min)\n'
+      }
+      output += '\nPOSTING GOAL\n'
+      output += `Stage: ${currentProjectState.stage}\n`
+      if (currentProjectState.nextCheckpoint.trim()) {
+        output += `Checkpoint: ${currentProjectState.nextCheckpoint}\n`
+      }
+    }
+
+    return output
+  }
+
+  // Generate Work Mode actions
+  const handleGenerateWorkModeActions = () => {
+    const output = generateWorkModeOutput()
+    setCurrentWorkModeOutput(output)
+    
+    // Save to workModeOutputs
+    setWorkModeOutputs({
+      ...workModeOutputs,
+      [selectedProjectId]: {
+        mode: workMode,
+        text: output,
+        createdAt: Date.now(),
+      },
+    })
+  }
+
+  // Copy Work Mode output
+  const handleCopyWorkModeOutput = () => {
+    if (!currentWorkModeOutput) return
+    navigator.clipboard.writeText(currentWorkModeOutput)
+  }
+
+  // Save Work Mode output as log
+  const handleSaveWorkModeAsLog = () => {
+    if (!currentWorkModeOutput || isProjectPaused) return
+    const modeLabel = workMode === 'dev' ? 'Dev' : workMode === 'sales' ? 'Sales' : 'Content'
+    const logTextWithPrefix = `[AUTO WORKMODE: ${modeLabel}]\n\n${currentWorkModeOutput}`
+    const newLog: Log = {
+      id: uid(),
+      timestamp: new Date().toISOString(),
+      projectId: selectedProjectId,
+      energy,
+      text: logTextWithPrefix,
+    }
+    setLogs([newLog, ...logs])
+  }
+
   // Generate daily brief
   const handleGenerateBrief = () => {
     const selectedProject = projects.find(p => p.id === selectedProjectId)
@@ -428,6 +937,10 @@ function App() {
       tasks,
       logs,
       projectStatuses,
+      workMode,
+      workModeOutputs,
+      projectState,
+      milestones,
     }
     downloadJSON(exportData, `ark-engine-export-${Date.now()}.json`)
   }
@@ -465,6 +978,22 @@ function App() {
           // Restore project statuses if present, otherwise keep existing
           if (data.projectStatuses) {
             setProjectStatuses(data.projectStatuses)
+          }
+          // Restore workMode if present, otherwise keep existing
+          if (data.workMode) {
+            setWorkMode(data.workMode)
+          }
+          // Restore workModeOutputs if present, otherwise keep existing
+          if (data.workModeOutputs) {
+            setWorkModeOutputs(data.workModeOutputs)
+          }
+          // Restore projectState if present, otherwise keep existing
+          if (data.projectState) {
+            setProjectState(data.projectState)
+          }
+          // Restore milestones if present, otherwise keep existing
+          if (data.milestones) {
+            setMilestones(data.milestones)
           }
 
           alert('Data imported successfully!')
@@ -664,6 +1193,348 @@ function App() {
         >
           Generate Daily Brief
         </button>
+      </div>
+
+      {/* Project State Card */}
+      <div
+        style={{
+          background: '#ffffff',
+          padding: '20px',
+          borderRadius: '16px',
+          border: '1px solid #e5e7eb',
+          marginBottom: '24px',
+        }}
+      >
+        <h2 style={{ marginTop: '0', fontSize: '18px', marginBottom: '16px', fontWeight: '600', color: '#111827' }}>Project State</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Stage</label>
+            <select
+              value={currentProjectState.stage}
+              onChange={(e) => handleUpdateProjectState('stage', e.target.value as ProjectStage)}
+              disabled={isProjectPaused}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: isProjectPaused ? '#f3f4f6' : '#ffffff',
+                color: isProjectPaused ? '#6b7280' : '#111827',
+                cursor: isProjectPaused ? 'not-allowed' : 'pointer',
+                opacity: isProjectPaused ? 0.6 : 1,
+              }}
+            >
+              <option value="Planning">Planning</option>
+              <option value="Building">Building</option>
+              <option value="Shipping">Shipping</option>
+              <option value="Maintenance">Maintenance</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Next Checkpoint</label>
+            <input
+              type="text"
+              value={currentProjectState.nextCheckpoint}
+              onChange={(e) => handleUpdateProjectState('nextCheckpoint', e.target.value)}
+              disabled={isProjectPaused}
+              placeholder={isProjectPaused ? "Project is paused" : "What's the next checkpoint?"}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: isProjectPaused ? '#f3f4f6' : '#ffffff',
+                color: isProjectPaused ? '#6b7280' : '#111827',
+                opacity: isProjectPaused ? 0.6 : 1,
+                cursor: isProjectPaused ? 'not-allowed' : 'text',
+              }}
+            />
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+          <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Blockers</label>
+          <textarea
+            value={currentProjectState.blockers}
+            onChange={(e) => handleUpdateProjectState('blockers', e.target.value)}
+            disabled={isProjectPaused}
+            placeholder={isProjectPaused ? "Project is paused" : "What's blocking progress?"}
+            rows={3}
+            style={{
+              padding: '10px 14px',
+              fontSize: '14px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              backgroundColor: isProjectPaused ? '#f3f4f6' : '#ffffff',
+              color: isProjectPaused ? '#6b7280' : '#111827',
+              fontFamily: 'inherit',
+              resize: 'vertical',
+              opacity: isProjectPaused ? 0.6 : 1,
+              cursor: isProjectPaused ? 'not-allowed' : 'text',
+            }}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Last Shipped</label>
+          <div style={{
+            padding: '10px 14px',
+            fontSize: '13px',
+            border: '1px solid #e5e7eb',
+            borderRadius: '8px',
+            backgroundColor: '#f9fafb',
+            color: '#6b7280',
+          }}>
+            {lastShippedDisplay}
+          </div>
+        </div>
+      </div>
+
+      {/* Milestones Card */}
+      <div
+        style={{
+          background: '#ffffff',
+          padding: '20px',
+          borderRadius: '16px',
+          border: '1px solid #e5e7eb',
+          marginBottom: '24px',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h2 style={{ margin: '0', fontSize: '18px', fontWeight: '600', color: '#111827' }}>Milestones</h2>
+          <div style={{ fontSize: '14px', color: '#6b7280', fontWeight: '500' }}>
+            {milestoneProgress.done}/{milestoneProgress.total} done
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          <input
+            type="text"
+            value={newMilestoneText}
+            onChange={(e) => setNewMilestoneText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddMilestone()}
+            placeholder={isProjectPaused ? "Project is paused - cannot add milestones" : "New milestone..."}
+            disabled={isProjectPaused}
+            style={{
+              flex: '1',
+              padding: '10px 14px',
+              fontSize: '14px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              backgroundColor: isProjectPaused ? '#f3f4f6' : '#ffffff',
+              color: isProjectPaused ? '#6b7280' : '#111827',
+              opacity: isProjectPaused ? 0.6 : 1,
+              cursor: isProjectPaused ? 'not-allowed' : 'text',
+            }}
+          />
+          <button
+            onClick={handleAddMilestone}
+            disabled={isProjectPaused}
+            style={{
+              padding: '10px 20px',
+              background: isProjectPaused ? '#e5e7eb' : '#2563eb',
+              color: isProjectPaused ? '#9ca3af' : 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: isProjectPaused ? 'not-allowed' : 'pointer',
+              fontSize: '14px',
+              fontWeight: '500',
+            }}
+          >
+            Add
+          </button>
+        </div>
+        <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+          {currentProjectMilestones.length === 0 ? (
+            <p style={{ color: '#6b7280', fontStyle: 'italic' }}>No milestones yet. Add one above.</p>
+          ) : (
+            currentProjectMilestones.map(milestone => (
+              <div
+                key={milestone.id}
+                style={{
+                  padding: '12px',
+                  marginBottom: '8px',
+                  background: milestone.done ? '#f0fdf4' : '#ffffff',
+                  border: `1px solid ${milestone.done ? '#86efac' : '#e5e7eb'}`,
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={milestone.done}
+                  onChange={() => handleToggleMilestone(milestone.id)}
+                  disabled={isProjectPaused}
+                  style={{
+                    marginTop: '4px',
+                    cursor: isProjectPaused ? 'not-allowed' : 'pointer',
+                    width: '18px',
+                    height: '18px',
+                  }}
+                />
+                <span
+                  style={{
+                    flex: '1',
+                    textDecoration: milestone.done ? 'line-through' : 'none',
+                    color: milestone.done ? '#9ca3af' : '#111827',
+                    lineHeight: '1.5',
+                  }}
+                >
+                  {milestone.text}
+                </span>
+                <button
+                  onClick={() => handleDeleteMilestone(milestone.id)}
+                  disabled={isProjectPaused}
+                  style={{
+                    background: 'none',
+                    color: isProjectPaused ? '#9ca3af' : '#dc2626',
+                    border: `1px solid ${isProjectPaused ? '#e5e7eb' : '#dc2626'}`,
+                    borderRadius: '6px',
+                    padding: '6px 12px',
+                    cursor: isProjectPaused ? 'not-allowed' : 'pointer',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Work Mode Section */}
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+          <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Work Mode</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => setWorkMode('dev')}
+              style={{
+                padding: '8px 16px',
+                background: workMode === 'dev' ? '#2563eb' : '#ffffff',
+                color: workMode === 'dev' ? 'white' : '#111827',
+                border: `1px solid ${workMode === 'dev' ? '#2563eb' : '#e5e7eb'}`,
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '500',
+              }}
+            >
+              Dev
+            </button>
+            <button
+              onClick={() => setWorkMode('sales')}
+              style={{
+                padding: '8px 16px',
+                background: workMode === 'sales' ? '#2563eb' : '#ffffff',
+                color: workMode === 'sales' ? 'white' : '#111827',
+                border: `1px solid ${workMode === 'sales' ? '#2563eb' : '#e5e7eb'}`,
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '500',
+              }}
+            >
+              Sales
+            </button>
+            <button
+              onClick={() => setWorkMode('content')}
+              style={{
+                padding: '8px 16px',
+                background: workMode === 'content' ? '#2563eb' : '#ffffff',
+                color: workMode === 'content' ? 'white' : '#111827',
+                border: `1px solid ${workMode === 'content' ? '#2563eb' : '#e5e7eb'}`,
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: '500',
+              }}
+            >
+              Content
+            </button>
+          </div>
+          <button
+            onClick={handleGenerateWorkModeActions}
+            style={{
+              padding: '8px 16px',
+              background: '#2563eb',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: '500',
+            }}
+          >
+            Generate Actions
+          </button>
+        </div>
+
+        {/* Work Mode Output */}
+        {currentWorkModeOutput && (
+          <div
+            style={{
+              background: '#ffffff',
+              padding: '20px',
+              borderRadius: '16px',
+              border: '1px solid #e5e7eb',
+              marginBottom: '24px',
+            }}
+          >
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleCopyWorkModeOutput}
+                style={{
+                  padding: '8px 16px',
+                  background: '#ffffff',
+                  color: '#111827',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                }}
+              >
+                Copy Output
+              </button>
+              <button
+                onClick={handleSaveWorkModeAsLog}
+                disabled={isProjectPaused}
+                style={{
+                  padding: '8px 16px',
+                  background: isProjectPaused ? '#e5e7eb' : '#2563eb',
+                  color: isProjectPaused ? '#9ca3af' : 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: isProjectPaused ? 'not-allowed' : 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                }}
+              >
+                Save as Log
+              </button>
+            </div>
+            <pre
+              style={{
+                padding: '16px',
+                background: '#f9fafb',
+                borderRadius: '8px',
+                border: '1px solid #e5e7eb',
+                fontFamily: 'monospace',
+                fontSize: '13px',
+                lineHeight: '1.6',
+                whiteSpace: 'pre-wrap',
+                color: '#111827',
+                maxHeight: '600px',
+                overflowY: 'auto',
+                margin: '0',
+              }}
+            >
+              {currentWorkModeOutput}
+            </pre>
+          </div>
+        )}
       </div>
 
       {/* Daily Brief */}
