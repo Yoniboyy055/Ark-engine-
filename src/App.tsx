@@ -90,6 +90,7 @@ type ExportData = {
   projectState?: Record<string, ProjectState>
   milestones?: Milestone[]
   projectLedger?: Record<string, ProjectLedger>
+  outreachAgentSpec?: string
   projectStatuses?: Record<string, ProjectStateStatus>
 }
 
@@ -119,6 +120,62 @@ type SignalCryptBatch = {
 };
 
 const SC_BATCH_KEY = "ark_signalcrypt_batch_v1";
+const SC_OUTREACH_SPEC_KEY = "ark_signalcrypt_outreach_spec_v1";
+
+const SIGNALCRYPT_OUTREACH_SPEC_V1 = `{
+  "agentId": "signalcrypt_outreach_v1",
+  "status": "DRAFT",
+  "projectId": "signalcrypt",
+  "mode": "approval_gated_autonomy",
+  "cadence": {
+    "type": "weekly",
+    "day": "Sunday",
+    "timeLocal": "09:00",
+    "timezone": "America/Toronto"
+  },
+  "channels": {
+    "primary": "email",
+    "senderIdentity": "SignalCrypt",
+    "dm": {
+      "enabled": false,
+      "maxPerBatch": 3,
+      "rule": "only after email sequence OR dm-first qualification"
+    }
+  },
+  "limits": {
+    "emailsPerBatch": 15,
+    "followUpDelayDays": 4,
+    "maxFollowUps": 1
+  },
+  "discovery": {
+    "source": "public_web",
+    "icp": {
+      "region": "North America",
+      "companyType": "B2B SaaS",
+      "employeeRange": "10-200",
+      "mustHaveClaims": ["security", "trust", "privacy", "compliance", "uptime"]
+    },
+    "evidenceRequired": true,
+    "outputFields": ["name", "website", "whySelected", "evidenceUrl"]
+  },
+  "approval": {
+    "required": true,
+    "who": "Yonatan",
+    "states": ["PENDING", "APPROVED", "REJECTED", "PAUSED"]
+  },
+  "stopConditions": ["any_reply", "unsubscribe", "bounce", "manual_pause"],
+  "logging": {
+    "required": true,
+    "logTo": "ark_engine",
+    "fields": ["target", "channel", "step", "timestamp", "result"]
+  },
+  "gmail": {
+    "accountType": "personal",
+    "integration": "oauth",
+    "dryRun": true,
+    "draftsMode": "INTERNAL_ONLY"
+  }
+}`;
 
 function loadSignalCryptBatch(): SignalCryptBatch | null {
   try {
@@ -131,6 +188,18 @@ function loadSignalCryptBatch(): SignalCryptBatch | null {
 
 function saveSignalCryptBatch(batch: SignalCryptBatch) {
   localStorage.setItem(SC_BATCH_KEY, JSON.stringify(batch));
+}
+
+function loadSignalCryptOutreachSpec(): string {
+  try {
+    return localStorage.getItem(SC_OUTREACH_SPEC_KEY) || SIGNALCRYPT_OUTREACH_SPEC_V1
+  } catch {
+    return SIGNALCRYPT_OUTREACH_SPEC_V1
+  }
+}
+
+function saveSignalCryptOutreachSpec(spec: string) {
+  localStorage.setItem(SC_OUTREACH_SPEC_KEY, spec)
 }
 
 // Default projects
@@ -398,6 +467,7 @@ function App() {
   const [milestones, setMilestones] = useState<Milestone[]>([])
   const [newMilestoneText, setNewMilestoneText] = useState('')
   const [scBatch, setScBatch] = useState<SignalCryptBatch | null>(() => loadSignalCryptBatch())
+  const [scOutreachSpec, setScOutreachSpec] = useState<string>(() => loadSignalCryptOutreachSpec())
   const [scLoading, setScLoading] = useState(false)
   const [scError, setScError] = useState<string | null>(null)
 
@@ -538,6 +608,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.projectLedger, JSON.stringify(projectLedger))
   }, [projectLedger])
+
+  // Save SignalCrypt outreach spec to localStorage
+  useEffect(() => {
+    saveSignalCryptOutreachSpec(scOutreachSpec)
+  }, [scOutreachSpec])
 
   // Save milestones to localStorage
   useEffect(() => {
@@ -1279,6 +1354,7 @@ function App() {
       projectState,
       milestones,
       projectLedger,
+      outreachAgentSpec: scOutreachSpec,
     }
     downloadJSON(exportData, `ark-engine-export-${Date.now()}.json`)
   }
@@ -1360,6 +1436,9 @@ function App() {
               }
             })
             setProjectLedger(mergedLedger)
+          }
+          if (data.outreachAgentSpec) {
+            setScOutreachSpec(data.outreachAgentSpec)
           }
 
           alert('Data imported successfully!')
@@ -1705,6 +1784,30 @@ function App() {
             No batch loaded yet. Click <strong>Generate Batch</strong> to pull the weekly batch from Vercel.
           </div>
         )}
+      </div>
+
+      {/* SignalCrypt Outreach Agent Spec v1 */}
+      <div style={{ background: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e5e7eb', marginBottom: '24px' }}>
+        <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>SignalCrypt → Outreach Agent → Spec v1</div>
+        <div style={{ color: '#6b7280', fontSize: '12px', marginBottom: '12px' }}>
+          Permanent truth record. Approval-gated; no outbound execution from this app.
+        </div>
+        <pre
+          style={{
+            padding: '16px',
+            background: '#f9fafb',
+            borderRadius: '8px',
+            border: '1px solid #e5e7eb',
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            lineHeight: '1.6',
+            whiteSpace: 'pre-wrap',
+            color: '#111827',
+            margin: '0',
+          }}
+        >
+          {scOutreachSpec}
+        </pre>
       </div>
 
       {/* Momentum Card */}
