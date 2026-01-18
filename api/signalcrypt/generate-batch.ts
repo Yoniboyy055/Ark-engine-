@@ -51,7 +51,7 @@ function makeBatch() {
     email: {
       subjectA: "Quick question about your trust & security claims",
       body1:
-        "Hey {{firstName}},\n\nI'm reaching out because {{company}} publicly positions around trust/security/privacy.\n\nSignalCrypt is a fast "Breach Suite" that spots where trust breaks (messaging + compliance signals + exposure surfaces) and returns a clear fix list.\n\nIf I ran a quick pass and sent you 3 specific findings, would you want them?\n\n— {{yourName}}\nSignalCrypt",
+        "Hey {{firstName}},\n\nI'm reaching out because {{company}} publicly positions around trust/security/privacy.\n\nSignalCrypt is a fast \"Breach Suite\" that spots where trust breaks (messaging + compliance signals + exposure surfaces) and returns a clear fix list.\n\nIf I ran a quick pass and sent you 3 specific findings, would you want them?\n\n— {{yourName}}\nSignalCrypt",
       body2:
         "Hey {{firstName}},\n\nQuick follow-up — do you want the 3 findings pass for {{company}}?\nIf yes, tell me who should receive it.\n\n— {{yourName}}",
       followUpDelayDays: 4,
