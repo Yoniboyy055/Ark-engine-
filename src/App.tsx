@@ -3,9 +3,9 @@ import { useState, useEffect, useCallback } from 'react'
 // Types
 type Energy = 'low' | 'medium' | 'high'
 
-type ProjectStatus = 'Planning' | 'Building' | 'Shipping' | 'Paused'
+type ProjectStateStatus = 'Planning' | 'Building' | 'Shipping' | 'Maintenance' | 'Paused'
 
-type ProjectStage = 'Planning' | 'Building' | 'Shipping' | 'Maintenance'
+type ProjectCategory = 'Sacred' | 'Commercial'
 
 type WorkMode = 'dev' | 'sales' | 'content'
 
@@ -19,6 +19,7 @@ type Project = {
   id: string
   name: string
   goal: string
+  category: ProjectCategory
 }
 
 type Task = {
@@ -47,9 +48,26 @@ type DailyBrief = {
 }
 
 type ProjectState = {
-  stage: ProjectStage
+  stage: ProjectStateStatus
   blockers: string
   nextCheckpoint: string
+}
+
+type ProjectLedger = {
+  mission: string
+  oneSentenceGoal: string
+  currentReality: string
+  whatIsDone: string
+  whatIsWorking: string
+  whatIsBroken: string
+  whatIsMissing: string
+  assets: string
+  constraints: string
+  nextFocus: string
+  killCriteria: string
+  automationStatus: string
+  confidenceScore: number | null
+  lastUpdated: string
 }
 
 type Milestone = {
@@ -67,11 +85,12 @@ type ExportData = {
   projects: Project[]
   tasks: Task[]
   logs: Log[]
-  projectStatuses?: Record<string, ProjectStatus>
   workMode?: WorkMode
   workModeOutputs?: Record<string, WorkModeOutput>
   projectState?: Record<string, ProjectState>
   milestones?: Milestone[]
+  projectLedger?: Record<string, ProjectLedger>
+  projectStatuses?: Record<string, ProjectStateStatus>
 }
 
 // --- SignalCrypt Weekly Batch (Approval-Gated) ---
@@ -116,10 +135,66 @@ function saveSignalCryptBatch(batch: SignalCryptBatch) {
 
 // Default projects
 const DEFAULT_PROJECTS: Project[] = [
-  { id: 'ark-engine', name: 'Ark Engine', goal: 'Build a personal productivity command center' },
-  { id: 'amanuel-travel', name: 'Amanuel Travel', goal: 'Plan and execute travel adventures' },
-  { id: 'signalcrypt', name: 'SignalCrypt', goal: 'Secure communication platform' },
-  { id: 'strong-still', name: 'Strong & Still', goal: 'Fitness and wellness journey' },
+  {
+    id: 'ark-engine',
+    name: 'Ark Engine (Core)',
+    goal: 'The command center that tracks truth, progress, and decisions.',
+    category: 'Commercial',
+  },
+  {
+    id: 'amanuel-travel',
+    name: 'ATA - Amanuel Travel Agency',
+    goal: 'Travel website and booking system for Eritrean/diaspora travelers.',
+    category: 'Commercial',
+  },
+  {
+    id: 'signalcrypt',
+    name: 'SignalCrypt',
+    goal: 'B2B security / trust audit offer with approval-gated outbound systems.',
+    category: 'Commercial',
+  },
+  {
+    id: 'strong-still',
+    name: 'Strong & Still',
+    goal: 'Ministry, devotionals, books, spiritual writing, and faith-based rebuilding.',
+    category: 'Sacred',
+  },
+  {
+    id: 'luxury-pet',
+    name: 'Luxury Pet Business',
+    goal: 'High-end pet adventures and services.',
+    category: 'Commercial',
+  },
+  {
+    id: 'surplus',
+    name: 'Surplus Data / Surplus Properties',
+    goal: 'Identify surplus or public assets and match buyers intelligently.',
+    category: 'Commercial',
+  },
+  {
+    id: 'cik-workforce',
+    name: 'CIK Workforce System',
+    goal: 'Workforce management and automation for construction/field teams.',
+    category: 'Commercial',
+  },
+  {
+    id: 'ndc-iata',
+    name: 'NDC / IATA Airline System',
+    goal: 'Research and future platform for modern airline distribution and APIs.',
+    category: 'Commercial',
+  },
+  {
+    id: 'rebuild-nation',
+    name: 'Rebuild Nation',
+    goal: 'Umbrella identity and long-term legacy mission.',
+    category: 'Sacred',
+  },
+  {
+    id: 'automation-workflows',
+    name: 'Automation Workflows & Agents',
+    goal: 'Supporting systems that reduce manual effort across projects.',
+    category: 'Commercial',
+  },
 ]
 
 // Helper functions
@@ -130,6 +205,62 @@ const safeJSONParse = <T,>(json: string | null, defaultValue: T): T => {
   } catch {
     return defaultValue
   }
+}
+
+const mergeProjects = (storedProjects: Project[]): Project[] => {
+  const defaultsById = new Map(DEFAULT_PROJECTS.map(project => [project.id, project]))
+  const merged = storedProjects.map(project => {
+    const defaults = defaultsById.get(project.id)
+    if (!defaults) return project
+    return {
+      ...defaults,
+      ...project,
+      goal: project.goal || defaults.goal,
+      name: project.name || defaults.name,
+      category: project.category || defaults.category,
+    }
+  })
+
+  DEFAULT_PROJECTS.forEach(project => {
+    if (!merged.some(existing => existing.id === project.id)) {
+      merged.push(project)
+    }
+  })
+
+  return merged
+}
+
+const createDefaultProjectState = (): Record<string, ProjectState> => {
+  return DEFAULT_PROJECTS.reduce<Record<string, ProjectState>>((acc, project) => {
+    acc[project.id] = {
+      stage: 'Planning',
+      blockers: '',
+      nextCheckpoint: '',
+    }
+    return acc
+  }, {})
+}
+
+const createDefaultProjectLedger = (): Record<string, ProjectLedger> => {
+  return DEFAULT_PROJECTS.reduce<Record<string, ProjectLedger>>((acc, project) => {
+    acc[project.id] = {
+      mission: '',
+      oneSentenceGoal: project.goal,
+      currentReality: '',
+      whatIsDone: '',
+      whatIsWorking: '',
+      whatIsBroken: '',
+      whatIsMissing: '',
+      assets: '',
+      constraints: '',
+      nextFocus: '',
+      killCriteria: '',
+      automationStatus: '',
+      confidenceScore: null,
+      lastUpdated: '',
+    }
+    return acc
+  }, {})
 }
 
 const uid = (): string => {
@@ -155,38 +286,17 @@ const STORAGE_KEYS = {
   logs: 'ark_logs_v1',
   settings: 'ark_settings_v1',
   brief: 'ark_brief_v1',
-  projectStatuses: 'ark_project_status_v1',
   streak: 'ark_streak_v1',
   workMode: 'ark_workmode_v1',
   workModeOutputs: 'ark_workmode_output_v1',
   projectState: 'ark_project_state_v1',
   milestones: 'ark_milestones_v1',
+  projectLedger: 'ark_project_ledger_v1',
 }
 
 // Preload starter data
 const preloadProjectState = (): Record<string, ProjectState> => {
-  return {
-    'amanuel-travel': {
-      stage: 'Building',
-      blockers: 'Eritrea access issues for some links; Vercel deployment stability; possible env var/build errors.',
-      nextCheckpoint: 'Site loads reliably + build passes + booking request form works.',
-    },
-    'signalcrypt': {
-      stage: 'Planning',
-      blockers: 'Need tight offer page + proof/demo assets; choose outreach channel for first leads.',
-      nextCheckpoint: 'Delivery checklist + outreach templates finalized.',
-    },
-    'strong-still': {
-      stage: 'Building',
-      blockers: 'Time/energy after work; need simple daily posting rhythm.',
-      nextCheckpoint: 'One post shipped today + logged.',
-    },
-    'ark-engine': {
-      stage: 'Shipping',
-      blockers: 'Keep scope tight; prevent overbuilding.',
-      nextCheckpoint: 'Daily use: brief + workmode + log for 3 days straight.',
-    },
-  }
+  return createDefaultProjectState()
 }
 
 const preloadMilestones = (): Milestone[] => {
@@ -280,11 +390,11 @@ function App() {
   const [dailyBrief, setDailyBrief] = useState<DailyBrief | null>(null)
   const [editingNextAction, setEditingNextAction] = useState<string | null>(null)
   const [nextActionInputs, setNextActionInputs] = useState<Record<string, string>>({})
-  const [projectStatuses, setProjectStatuses] = useState<Record<string, ProjectStatus>>({})
   const [workMode, setWorkMode] = useState<WorkMode>('dev')
   const [workModeOutputs, setWorkModeOutputs] = useState<Record<string, WorkModeOutput>>({})
   const [currentWorkModeOutput, setCurrentWorkModeOutput] = useState<string>('')
   const [projectState, setProjectState] = useState<Record<string, ProjectState>>({})
+  const [projectLedger, setProjectLedger] = useState<Record<string, ProjectLedger>>({})
   const [milestones, setMilestones] = useState<Milestone[]>([])
   const [newMilestoneText, setNewMilestoneText] = useState('')
   const [scBatch, setScBatch] = useState<SignalCryptBatch | null>(() => loadSignalCryptBatch())
@@ -293,7 +403,8 @@ function App() {
 
   // Load data from localStorage on mount
   useEffect(() => {
-    const storedProjects = safeJSONParse<Project[]>(localStorage.getItem(STORAGE_KEYS.projects), DEFAULT_PROJECTS)
+    const storedProjectsRaw = safeJSONParse<Project[]>(localStorage.getItem(STORAGE_KEYS.projects), DEFAULT_PROJECTS)
+    const storedProjects = mergeProjects(storedProjectsRaw)
     const storedTasks = safeJSONParse<Task[]>(localStorage.getItem(STORAGE_KEYS.tasks), [])
     const storedLogs = safeJSONParse<Log[]>(localStorage.getItem(STORAGE_KEYS.logs), [])
     const storedSettings = safeJSONParse<{ projectId: string; energy: Energy }>(
@@ -301,8 +412,8 @@ function App() {
       { projectId: DEFAULT_PROJECTS[0].id, energy: 'medium' }
     )
     const storedBrief = safeJSONParse<DailyBrief | null>(localStorage.getItem(STORAGE_KEYS.brief), null)
-    const storedStatuses = safeJSONParse<Record<string, ProjectStatus>>(
-      localStorage.getItem(STORAGE_KEYS.projectStatuses),
+    const legacyStatuses = safeJSONParse<Record<string, ProjectStateStatus>>(
+      localStorage.getItem('ark_project_status_v1'),
       {}
     )
     const storedWorkMode = safeJSONParse<WorkMode>(
@@ -317,34 +428,69 @@ function App() {
       localStorage.getItem(STORAGE_KEYS.projectState),
       {}
     )
+    const storedProjectLedger = safeJSONParse<Record<string, ProjectLedger>>(
+      localStorage.getItem(STORAGE_KEYS.projectLedger),
+      {}
+    )
     const storedMilestones = safeJSONParse<Milestone[]>(
       localStorage.getItem(STORAGE_KEYS.milestones),
       []
     )
 
     // Preload starter data if storage is empty
-    let finalProjectState = storedProjectState
+    const defaultProjectState = createDefaultProjectState()
+    let finalProjectState = { ...defaultProjectState }
     let finalMilestones = storedMilestones
+    const defaultProjectLedger = createDefaultProjectLedger()
+    let finalProjectLedger = { ...defaultProjectLedger }
     
-    if (Object.keys(storedProjectState).length === 0) {
+    if (Object.keys(storedProjectState).length === 0 && Object.keys(legacyStatuses).length > 0) {
+      Object.entries(legacyStatuses).forEach(([projectId, status]) => {
+        if (finalProjectState[projectId]) {
+          finalProjectState[projectId] = {
+            ...finalProjectState[projectId],
+            stage: status,
+          }
+        }
+      })
+    } else if (Object.keys(storedProjectState).length === 0) {
       finalProjectState = preloadProjectState()
-      localStorage.setItem(STORAGE_KEYS.projectState, JSON.stringify(finalProjectState))
+    } else {
+      Object.entries(storedProjectState).forEach(([projectId, state]) => {
+        finalProjectState[projectId] = {
+          ...finalProjectState[projectId],
+          ...state,
+        }
+      })
     }
     
     if (storedMilestones.length === 0) {
       finalMilestones = preloadMilestones()
       localStorage.setItem(STORAGE_KEYS.milestones, JSON.stringify(finalMilestones))
     }
+    
+    if (Object.keys(storedProjectLedger).length > 0) {
+      Object.entries(storedProjectLedger).forEach(([projectId, ledger]) => {
+        finalProjectLedger[projectId] = {
+          ...finalProjectLedger[projectId],
+          ...ledger,
+          oneSentenceGoal: ledger.oneSentenceGoal || finalProjectLedger[projectId]?.oneSentenceGoal || '',
+        }
+      })
+    }
 
     setProjects(storedProjects)
     setTasks(storedTasks)
     setLogs(storedLogs)
-    setSelectedProjectId(storedSettings.projectId)
+    const resolvedProjectId = storedProjects.some(project => project.id === storedSettings.projectId)
+      ? storedSettings.projectId
+      : DEFAULT_PROJECTS[0].id
+    setSelectedProjectId(resolvedProjectId)
     setEnergy(storedSettings.energy)
-    setProjectStatuses(storedStatuses)
     setWorkMode(storedWorkMode)
     setWorkModeOutputs(storedWorkModeOutputs)
     setProjectState(finalProjectState)
+    setProjectLedger(finalProjectLedger)
     setMilestones(finalMilestones)
     if (storedBrief) {
       setDailyBrief(storedBrief)
@@ -373,11 +519,6 @@ function App() {
     }
   }, [dailyBrief])
 
-  // Save project statuses to localStorage
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.projectStatuses, JSON.stringify(projectStatuses))
-  }, [projectStatuses])
-
   // Save workMode to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.workMode, JSON.stringify(workMode))
@@ -392,6 +533,11 @@ function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.projectState, JSON.stringify(projectState))
   }, [projectState])
+
+  // Save projectLedger to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.projectLedger, JSON.stringify(projectLedger))
+  }, [projectLedger])
 
   // Save milestones to localStorage
   useEffect(() => {
@@ -409,16 +555,96 @@ function App() {
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 6)
 
-  // Get current project status (default to Planning)
-  const currentProjectStatus = projectStatuses[selectedProjectId] || 'Planning'
-  const isProjectPaused = currentProjectStatus === 'Paused'
-
   // Get current project state
   const currentProjectState = projectState[selectedProjectId] || {
-    stage: 'Planning' as ProjectStage,
+    stage: 'Planning' as ProjectStateStatus,
     blockers: '',
     nextCheckpoint: '',
   }
+
+  const currentProject = projects.find(p => p.id === selectedProjectId)
+
+  // Get current project ledger
+  const currentProjectLedger =
+    projectLedger[selectedProjectId] ||
+    createDefaultProjectLedger()[selectedProjectId] || {
+      mission: '',
+      oneSentenceGoal: currentProject?.goal || '',
+      currentReality: '',
+      whatIsDone: '',
+      whatIsWorking: '',
+      whatIsBroken: '',
+      whatIsMissing: '',
+      assets: '',
+      constraints: '',
+      nextFocus: '',
+      killCriteria: '',
+      automationStatus: '',
+      confidenceScore: null,
+      lastUpdated: '',
+    }
+  const confidenceScore = currentProjectLedger?.confidenceScore ?? null
+  const isConfidenceUnset = confidenceScore === null
+  const isConfidenceLow = confidenceScore !== null && confidenceScore < 3
+
+  // Get current project status (paused if stage is Paused)
+  const isProjectPaused = currentProjectState.stage === 'Paused'
+  const isSacredProject = currentProject?.category === 'Sacred'
+
+  const buildingProjectIds = Object.entries(projectState)
+    .filter(([, state]) => state.stage === 'Building')
+    .map(([projectId]) => projectId)
+  const buildingProjectNames = buildingProjectIds.map(projectId => {
+    return projects.find(project => project.id === projectId)?.name || projectId
+  })
+  const hasBuildingConflict = buildingProjectIds.length > 1
+  const isExecutionBlocked = hasBuildingConflict || isConfidenceLow || isConfidenceUnset
+
+  const signalCryptState = projectState['signalcrypt']
+  const signalCryptLedger =
+    projectLedger['signalcrypt'] ||
+    createDefaultProjectLedger()['signalcrypt'] || {
+      mission: '',
+      oneSentenceGoal: '',
+      currentReality: '',
+      whatIsDone: '',
+      whatIsWorking: '',
+      whatIsBroken: '',
+      whatIsMissing: '',
+      assets: '',
+      constraints: '',
+      nextFocus: '',
+      killCriteria: '',
+      automationStatus: '',
+      confidenceScore: null,
+      lastUpdated: '',
+    }
+  const signalCryptConfidence = signalCryptLedger?.confidenceScore ?? null
+  const isSignalCryptPaused = signalCryptState?.stage === 'Paused'
+  const isSignalCryptLocked = hasBuildingConflict || isSignalCryptPaused || signalCryptConfidence === null || signalCryptConfidence < 3
+  const signalCryptLockReason = hasBuildingConflict
+    ? 'Resolve the Building conflict first.'
+    : isSignalCryptPaused
+    ? 'SignalCrypt is paused.'
+    : signalCryptConfidence === null
+    ? 'Set a SignalCrypt confidence score before generating batches.'
+    : 'SignalCrypt confidence is below 3.'
+
+  const executionBlockMessages: string[] = []
+  if (hasBuildingConflict) {
+    executionBlockMessages.push(`Multiple projects in Building: ${buildingProjectNames.join(', ')}`)
+  }
+  if (isConfidenceUnset) {
+    executionBlockMessages.push('Confidence score is not set for this project')
+  } else if (isConfidenceLow) {
+    executionBlockMessages.push('Confidence score is below 3 for this project')
+  }
+
+  const canEnterBuilding =
+    !isConfidenceLow &&
+    !isConfidenceUnset &&
+    (buildingProjectIds.length === 0 || buildingProjectIds.includes(selectedProjectId))
+  const canEnterShipping = !isConfidenceLow && !isConfidenceUnset
 
   // Get current project milestones
   const currentProjectMilestones = milestones
@@ -436,14 +662,69 @@ function App() {
     ? `${new Date(lastShippedLog.timestamp).toLocaleString()}: ${lastShippedLog.text.split('\n')[0].slice(0, 60)}${lastShippedLog.text.split('\n')[0].length > 60 ? '...' : ''}`
     : 'No logs yet'
 
+  const touchLedgerUpdate = () => {
+    const baseLedger = projectLedger[selectedProjectId] || currentProjectLedger
+    setProjectLedger({
+      ...projectLedger,
+      [selectedProjectId]: {
+        ...baseLedger,
+        lastUpdated: new Date().toISOString(),
+      },
+    })
+  }
+
   // Update project state
-  const handleUpdateProjectState = (field: keyof ProjectState, value: string | ProjectStage) => {
-    if (isProjectPaused) return
+  const handleUpdateProjectState = (field: keyof ProjectState, value: string | ProjectStateStatus) => {
+    if (field === 'stage') {
+      const nextStage = value as ProjectStateStatus
+      if ((nextStage === 'Building' || nextStage === 'Shipping') && (isConfidenceLow || isConfidenceUnset)) {
+        alert('Confidence must be 3+ to move into Building or Shipping.')
+        return
+      }
+      if (nextStage === 'Building') {
+        const otherBuilding = buildingProjectIds.filter(projectId => projectId !== selectedProjectId)
+        if (otherBuilding.length > 0) {
+          alert('Only one project can be in Building. Resolve the conflict first.')
+          return
+        }
+      }
+    }
+
     setProjectState({
       ...projectState,
       [selectedProjectId]: {
         ...currentProjectState,
         [field]: value,
+      },
+    })
+    touchLedgerUpdate()
+  }
+
+  const handleUpdateProjectLedger = (field: keyof ProjectLedger, value: string | number | null) => {
+    const currentLedger = projectLedger[selectedProjectId] || currentProjectLedger
+    const nextValue =
+      field === 'confidenceScore'
+        ? value === null
+          ? null
+          : Number(value)
+        : value
+    setProjectLedger({
+      ...projectLedger,
+      [selectedProjectId]: {
+        ...currentLedger,
+        [field]: nextValue,
+        lastUpdated: new Date().toISOString(),
+      },
+    })
+  }
+
+  const handleMarkWeeklyUpdate = () => {
+    const currentLedger = projectLedger[selectedProjectId] || currentProjectLedger
+    setProjectLedger({
+      ...projectLedger,
+      [selectedProjectId]: {
+        ...currentLedger,
+        lastUpdated: new Date().toISOString(),
       },
     })
   }
@@ -636,11 +917,6 @@ function App() {
     setLogText('')
   }
 
-  // Update project status
-  const handleUpdateProjectStatus = (projectId: string, status: ProjectStatus) => {
-    setProjectStatuses({ ...projectStatuses, [projectId]: status })
-  }
-
   // Copy latest log
   const handleCopyLatestLog = () => {
     if (currentProjectLogs.length === 0) return
@@ -700,7 +976,21 @@ function App() {
 
     // Context section
     output += 'CONTEXT\n'
-    output += `Stage: ${currentProjectState.stage}\n`
+    output += `State: ${currentProjectState.stage}\n`
+    output += `Category: ${selectedProject.category}\n`
+    output += `Confidence: ${confidenceScore === null ? 'Unknown' : `${confidenceScore}/5`}\n`
+    if (hasBuildingConflict) {
+      output += `Execution: PAUSED (multiple projects in Building: ${buildingProjectNames.join(', ')})\n`
+    } else if (isConfidenceUnset) {
+      output += 'Execution: PAUSED (confidence not set)\n'
+    } else if (isConfidenceLow) {
+      output += 'Execution: PAUSED (confidence below 3)\n'
+    }
+    if (selectedProject.category === 'Sacred') {
+      output += 'Automation: sacred boundary (slow, manual, protected)\n'
+    } else {
+      output += 'Automation: approval required before outbound actions\n'
+    }
     if (currentProjectState.blockers.trim()) {
       const blockersShort = currentProjectState.blockers.length > 100 
         ? currentProjectState.blockers.slice(0, 100) + '...'
@@ -709,6 +999,9 @@ function App() {
     }
     if (currentProjectState.nextCheckpoint.trim()) {
       output += `Next Checkpoint: ${currentProjectState.nextCheckpoint}\n`
+    }
+    if (currentProjectLedger.nextFocus.trim()) {
+      output += `Next Focus: ${currentProjectLedger.nextFocus}\n`
     }
     output += `Milestones: ${milestoneProgress.done}/${milestoneProgress.total} done\n`
     output += '\n'
@@ -885,7 +1178,7 @@ function App() {
         output += '1. Research and outline (15 min)\n2. Write full draft (25 min)\n3. Edit and refine (15 min)\n4. Format and post (5 min)\n'
       }
       output += '\nPOSTING GOAL\n'
-      output += `Stage: ${currentProjectState.stage}\n`
+      output += `State: ${currentProjectState.stage}\n`
       if (currentProjectState.nextCheckpoint.trim()) {
         output += `Checkpoint: ${currentProjectState.nextCheckpoint}\n`
       }
@@ -896,6 +1189,7 @@ function App() {
 
   // Generate Work Mode actions
   const handleGenerateWorkModeActions = () => {
+    if (isExecutionBlocked) return
     const output = generateWorkModeOutput()
     setCurrentWorkModeOutput(output)
     
@@ -933,6 +1227,7 @@ function App() {
 
   // Generate daily brief
   const handleGenerateBrief = () => {
+    if (isExecutionBlocked) return
     const selectedProject = projects.find(p => p.id === selectedProjectId)
     if (!selectedProject) return
 
@@ -979,11 +1274,11 @@ function App() {
       projects,
       tasks,
       logs,
-      projectStatuses,
       workMode,
       workModeOutputs,
       projectState,
       milestones,
+      projectLedger,
     }
     downloadJSON(exportData, `ark-engine-export-${Date.now()}.json`)
   }
@@ -1017,11 +1312,7 @@ function App() {
           if (data.selectedProjectId) setSelectedProjectId(data.selectedProjectId)
           if (data.tasks) setTasks(data.tasks)
           if (data.logs) setLogs(data.logs)
-          if (data.projects) setProjects(data.projects)
-          // Restore project statuses if present, otherwise keep existing
-          if (data.projectStatuses) {
-            setProjectStatuses(data.projectStatuses)
-          }
+          if (data.projects) setProjects(mergeProjects(data.projects))
           // Restore workMode if present, otherwise keep existing
           if (data.workMode) {
             setWorkMode(data.workMode)
@@ -1032,11 +1323,43 @@ function App() {
           }
           // Restore projectState if present, otherwise keep existing
           if (data.projectState) {
-            setProjectState(data.projectState)
+            const defaults = createDefaultProjectState()
+            const mergedState = { ...defaults }
+            Object.entries(data.projectState).forEach(([projectId, state]) => {
+              mergedState[projectId] = {
+                ...mergedState[projectId],
+                ...state,
+              }
+            })
+            setProjectState(mergedState)
+          } else if (data.projectStatuses) {
+            const defaults = createDefaultProjectState()
+            Object.entries(data.projectStatuses).forEach(([projectId, status]) => {
+              if (defaults[projectId]) {
+                defaults[projectId] = {
+                  ...defaults[projectId],
+                  stage: status,
+                }
+              }
+            })
+            setProjectState(defaults)
           }
           // Restore milestones if present, otherwise keep existing
           if (data.milestones) {
             setMilestones(data.milestones)
+          }
+          // Restore projectLedger if present, otherwise keep existing
+          if (data.projectLedger) {
+            const defaults = createDefaultProjectLedger()
+            const mergedLedger = { ...defaults }
+            Object.entries(data.projectLedger).forEach(([projectId, ledger]) => {
+              mergedLedger[projectId] = {
+                ...mergedLedger[projectId],
+                ...ledger,
+                oneSentenceGoal: ledger.oneSentenceGoal || mergedLedger[projectId]?.oneSentenceGoal || '',
+              }
+            })
+            setProjectLedger(mergedLedger)
           }
 
           alert('Data imported successfully!')
@@ -1050,6 +1373,10 @@ function App() {
   }, [])
 
   async function fetchSignalCryptBatch() {
+    if (isSignalCryptLocked) {
+      setScError(signalCryptLockReason)
+      return
+    }
     setScLoading(true)
     setScError(null)
     try {
@@ -1232,6 +1559,38 @@ function App() {
         </div>
       </div>
 
+      {hasBuildingConflict && (
+        <div style={{ marginBottom: '16px', padding: '12px 16px', borderRadius: '12px', background: '#fef2f2', border: '1px solid #fecaca' }}>
+          <div style={{ fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>Building Conflict Detected</div>
+          <div style={{ fontSize: '13px', color: '#7f1d1d' }}>
+            Only one project can be in Building. Current Building projects: {buildingProjectNames.join(', ')}.
+          </div>
+        </div>
+      )}
+
+      <div style={{ background: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e5e7eb', marginBottom: '24px' }}>
+        <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '8px' }}>Operating Principles</div>
+        <ul style={{ margin: '0 0 12px', paddingLeft: '20px', color: '#374151', lineHeight: '1.6', fontSize: '13px' }}>
+          <li>Clarity over speed. Truth over appearance. Sustainability over hype. Alignment over automation.</li>
+          <li>Sacred work stays protected and slow. Commercial work requires approval gates.</li>
+          <li>Only one project can be in Building at a time.</li>
+          <li>Confidence below 3 pauses automation and execution.</li>
+        </ul>
+        <div style={{ fontSize: '12px', color: '#6b7280' }}>
+          Current project type: <strong style={{ color: '#111827' }}>{currentProject?.category || 'Unknown'}</strong>
+        </div>
+        {executionBlockMessages.length > 0 && (
+          <div style={{ marginTop: '12px', padding: '10px 12px', borderRadius: '8px', background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', fontSize: '12px' }}>
+            <strong>Execution locked:</strong>
+            <ul style={{ margin: '6px 0 0', paddingLeft: '18px' }}>
+              {executionBlockMessages.map((message, idx) => (
+                <li key={idx}>{message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
       {/* SignalCrypt Weekly Batch Card */}
       <div style={{ background: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e5e7eb', marginBottom: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
@@ -1245,14 +1604,14 @@ function App() {
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               onClick={fetchSignalCryptBatch}
-              disabled={scLoading}
+              disabled={scLoading || isSignalCryptLocked}
               style={{
                 padding: '8px 16px',
                 borderRadius: '8px',
                 border: '1px solid #e5e7eb',
-                background: scLoading ? '#e5e7eb' : '#2563eb',
+                background: scLoading || isSignalCryptLocked ? '#e5e7eb' : '#2563eb',
                 color: 'white',
-                cursor: scLoading ? 'not-allowed' : 'pointer',
+                cursor: scLoading || isSignalCryptLocked ? 'not-allowed' : 'pointer',
                 fontSize: '13px',
                 fontWeight: '500',
               }}
@@ -1262,14 +1621,14 @@ function App() {
 
             <button
               onClick={approveSignalCryptBatch}
-              disabled={!scBatch || scBatch.approval.status === 'APPROVED'}
+              disabled={!scBatch || scBatch.approval.status === 'APPROVED' || isSignalCryptLocked}
               style={{
                 padding: '8px 16px',
                 borderRadius: '8px',
                 border: '1px solid #16a34a',
-                background: !scBatch || scBatch.approval.status === 'APPROVED' ? '#e5e7eb' : '#16a34a',
+                background: !scBatch || scBatch.approval.status === 'APPROVED' || isSignalCryptLocked ? '#e5e7eb' : '#16a34a',
                 color: 'white',
-                cursor: !scBatch || scBatch.approval.status === 'APPROVED' ? 'not-allowed' : 'pointer',
+                cursor: !scBatch || scBatch.approval.status === 'APPROVED' || isSignalCryptLocked ? 'not-allowed' : 'pointer',
                 fontSize: '13px',
                 fontWeight: '500',
               }}
@@ -1294,6 +1653,15 @@ function App() {
               Reject
             </button>
           </div>
+        </div>
+
+        {isSignalCryptLocked && (
+          <div style={{ marginTop: '10px', padding: '10px 12px', borderRadius: '8px', background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', fontSize: '12px' }}>
+            <strong>Locked:</strong> {signalCryptLockReason}
+          </div>
+        )}
+        <div style={{ marginTop: '8px', color: '#6b7280', fontSize: '12px' }}>
+          Approval required before any outbound action. No emails, messages, or calls are sent from this screen.
         </div>
 
         {scError ? (
@@ -1395,6 +1763,21 @@ function App() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Project</label>
+            {currentProject?.category && (
+              <span
+                style={{
+                  padding: '3px 10px',
+                  background: currentProject.category === 'Sacred' ? '#0f766e' : '#2563eb',
+                  color: 'white',
+                  borderRadius: '999px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                {currentProject.category.toUpperCase()}
+              </span>
+            )}
             {isProjectPaused && (
               <span
                 style={{
@@ -1408,6 +1791,21 @@ function App() {
                 }}
               >
                 PAUSED
+              </span>
+            )}
+            {isExecutionBlocked && (
+              <span
+                style={{
+                  padding: '3px 10px',
+                  background: '#ef4444',
+                  color: 'white',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                EXECUTION LOCKED
               </span>
             )}
           </div>
@@ -1428,28 +1826,6 @@ function App() {
             {projects.map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
-          </select>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Status</label>
-          <select
-            value={currentProjectStatus}
-            onChange={(e) => handleUpdateProjectStatus(selectedProjectId, e.target.value as ProjectStatus)}
-            style={{ 
-              padding: '10px 14px', 
-              fontSize: '14px', 
-              minWidth: '150px',
-              border: '1px solid #e5e7eb',
-              borderRadius: '8px',
-              backgroundColor: '#ffffff',
-              color: '#111827',
-              cursor: 'pointer',
-            }}
-          >
-            <option value="Planning">Planning</option>
-            <option value="Building">Building</option>
-            <option value="Shipping">Shipping</option>
-            <option value="Paused">Paused</option>
           </select>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1474,13 +1850,14 @@ function App() {
         </div>
         <button
           onClick={handleGenerateBrief}
+          disabled={isExecutionBlocked}
           style={{
             padding: '10px 20px',
-            background: '#2563eb',
-            color: 'white',
+            background: isExecutionBlocked ? '#e5e7eb' : '#2563eb',
+            color: isExecutionBlocked ? '#9ca3af' : 'white',
             border: 'none',
             borderRadius: '8px',
-            cursor: 'pointer',
+            cursor: isExecutionBlocked ? 'not-allowed' : 'pointer',
             fontSize: '14px',
             fontWeight: '500',
           }}
@@ -1500,28 +1877,52 @@ function App() {
         }}
       >
         <h2 style={{ marginTop: '0', fontSize: '18px', marginBottom: '16px', fontWeight: '600', color: '#111827' }}>Project State</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: '16px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Stage</label>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>State</label>
             <select
               value={currentProjectState.stage}
-              onChange={(e) => handleUpdateProjectState('stage', e.target.value as ProjectStage)}
-              disabled={isProjectPaused}
+              onChange={(e) => handleUpdateProjectState('stage', e.target.value as ProjectStateStatus)}
               style={{
                 padding: '10px 14px',
                 fontSize: '14px',
                 border: '1px solid #e5e7eb',
                 borderRadius: '8px',
-                backgroundColor: isProjectPaused ? '#f3f4f6' : '#ffffff',
-                color: isProjectPaused ? '#6b7280' : '#111827',
-                cursor: isProjectPaused ? 'not-allowed' : 'pointer',
-                opacity: isProjectPaused ? 0.6 : 1,
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                cursor: 'pointer',
               }}
             >
               <option value="Planning">Planning</option>
-              <option value="Building">Building</option>
-              <option value="Shipping">Shipping</option>
+              <option value="Building" disabled={!canEnterBuilding}>Building</option>
+              <option value="Shipping" disabled={!canEnterShipping}>Shipping</option>
               <option value="Maintenance">Maintenance</option>
+              <option value="Paused">Paused</option>
+            </select>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Confidence</label>
+            <select
+              value={confidenceScore ?? ''}
+              onChange={(e) =>
+                handleUpdateProjectLedger('confidenceScore', e.target.value === '' ? null : Number(e.target.value))
+              }
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="">Unknown</option>
+              <option value="1">1 - Very Low</option>
+              <option value="2">2 - Low</option>
+              <option value="3">3 - Steady</option>
+              <option value="4">4 - Confident</option>
+              <option value="5">5 - Locked</option>
             </select>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1530,17 +1931,14 @@ function App() {
               type="text"
               value={currentProjectState.nextCheckpoint}
               onChange={(e) => handleUpdateProjectState('nextCheckpoint', e.target.value)}
-              disabled={isProjectPaused}
-              placeholder={isProjectPaused ? "Project is paused" : "What's the next checkpoint?"}
+              placeholder="What's the next checkpoint?"
               style={{
                 padding: '10px 14px',
                 fontSize: '14px',
                 border: '1px solid #e5e7eb',
                 borderRadius: '8px',
-                backgroundColor: isProjectPaused ? '#f3f4f6' : '#ffffff',
-                color: isProjectPaused ? '#6b7280' : '#111827',
-                opacity: isProjectPaused ? 0.6 : 1,
-                cursor: isProjectPaused ? 'not-allowed' : 'text',
+                backgroundColor: '#ffffff',
+                color: '#111827',
               }}
             />
           </div>
@@ -1550,23 +1948,26 @@ function App() {
           <textarea
             value={currentProjectState.blockers}
             onChange={(e) => handleUpdateProjectState('blockers', e.target.value)}
-            disabled={isProjectPaused}
-            placeholder={isProjectPaused ? "Project is paused" : "What's blocking progress?"}
+            placeholder="What's blocking progress?"
             rows={3}
             style={{
               padding: '10px 14px',
               fontSize: '14px',
               border: '1px solid #e5e7eb',
               borderRadius: '8px',
-              backgroundColor: isProjectPaused ? '#f3f4f6' : '#ffffff',
-              color: isProjectPaused ? '#6b7280' : '#111827',
+              backgroundColor: '#ffffff',
+              color: '#111827',
               fontFamily: 'inherit',
               resize: 'vertical',
-              opacity: isProjectPaused ? 0.6 : 1,
-              cursor: isProjectPaused ? 'not-allowed' : 'text',
+              cursor: 'text',
             }}
           />
         </div>
+        {(isConfidenceLow || isConfidenceUnset) && (
+          <div style={{ marginBottom: '16px', padding: '10px 12px', borderRadius: '8px', background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', fontSize: '12px' }}>
+            Execution is locked until confidence is 3+ for this project.
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Last Shipped</label>
           <div style={{
@@ -1578,6 +1979,298 @@ function App() {
             color: '#6b7280',
           }}>
             {lastShippedDisplay}
+          </div>
+        </div>
+      </div>
+
+      {/* Project Truth Ledger */}
+      <div
+        style={{
+          background: '#ffffff',
+          padding: '20px',
+          borderRadius: '16px',
+          border: '1px solid #e5e7eb',
+          marginBottom: '24px',
+        }}
+      >
+        <h2 style={{ marginTop: '0', fontSize: '18px', marginBottom: '16px', fontWeight: '600', color: '#111827' }}>Project Truth Ledger</h2>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Mission</label>
+            <input
+              type="text"
+              value={currentProjectLedger.mission}
+              onChange={(e) => handleUpdateProjectLedger('mission', e.target.value)}
+              placeholder="Unknown - update mission"
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>One Sentence Goal</label>
+            <input
+              type="text"
+              value={currentProjectLedger.oneSentenceGoal}
+              onChange={(e) => handleUpdateProjectLedger('oneSentenceGoal', e.target.value)}
+              placeholder="Unknown - update goal"
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Current Reality</label>
+            <textarea
+              value={currentProjectLedger.currentReality}
+              onChange={(e) => handleUpdateProjectLedger('currentReality', e.target.value)}
+              placeholder="Unknown - update current reality"
+              rows={3}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Next Focus</label>
+            <textarea
+              value={currentProjectLedger.nextFocus}
+              onChange={(e) => handleUpdateProjectLedger('nextFocus', e.target.value)}
+              placeholder="Unknown - update next focus"
+              rows={3}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>What Is Done</label>
+            <textarea
+              value={currentProjectLedger.whatIsDone}
+              onChange={(e) => handleUpdateProjectLedger('whatIsDone', e.target.value)}
+              placeholder="Unknown - update what's done"
+              rows={3}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>What Is Working</label>
+            <textarea
+              value={currentProjectLedger.whatIsWorking}
+              onChange={(e) => handleUpdateProjectLedger('whatIsWorking', e.target.value)}
+              placeholder="Unknown - update what's working"
+              rows={3}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>What Is Broken</label>
+            <textarea
+              value={currentProjectLedger.whatIsBroken}
+              onChange={(e) => handleUpdateProjectLedger('whatIsBroken', e.target.value)}
+              placeholder="Unknown - update what's broken"
+              rows={3}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>What Is Missing</label>
+            <textarea
+              value={currentProjectLedger.whatIsMissing}
+              onChange={(e) => handleUpdateProjectLedger('whatIsMissing', e.target.value)}
+              placeholder="Unknown - update what's missing"
+              rows={3}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Assets</label>
+            <textarea
+              value={currentProjectLedger.assets}
+              onChange={(e) => handleUpdateProjectLedger('assets', e.target.value)}
+              placeholder="Repos, sites, accounts, docs"
+              rows={3}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Constraints</label>
+            <textarea
+              value={currentProjectLedger.constraints}
+              onChange={(e) => handleUpdateProjectLedger('constraints', e.target.value)}
+              placeholder="Time, money, tools, legal, personal"
+              rows={3}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Automation Status</label>
+            <input
+              type="text"
+              value={currentProjectLedger.automationStatus}
+              onChange={(e) => handleUpdateProjectLedger('automationStatus', e.target.value)}
+              placeholder="Not set - approval required before action"
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Kill Criteria</label>
+            <textarea
+              value={currentProjectLedger.killCriteria}
+              onChange={(e) => handleUpdateProjectLedger('killCriteria', e.target.value)}
+              placeholder="Define clear stop conditions"
+              rows={2}
+              style={{
+                padding: '10px 14px',
+                fontSize: '14px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                color: '#111827',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div style={{ padding: '12px', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb' }}>
+            <div style={{ fontWeight: '600', fontSize: '13px', color: '#111827', marginBottom: '6px' }}>Top 3 Tasks (auto)</div>
+            {top3Tasks.length === 0 ? (
+              <div style={{ fontSize: '12px', color: '#6b7280' }}>No tasks yet.</div>
+            ) : (
+              <ol style={{ margin: '0', paddingLeft: '18px', fontSize: '12px', color: '#374151', lineHeight: '1.6' }}>
+                {top3Tasks.map(task => (
+                  <li key={task.id}>{task.nextAction || task.text}</li>
+                ))}
+              </ol>
+            )}
+          </div>
+          <div style={{ padding: '12px', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb' }}>
+            <div style={{ fontWeight: '600', fontSize: '13px', color: '#111827', marginBottom: '6px' }}>Ledger Updated</div>
+            <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '10px' }}>
+              {currentProjectLedger.lastUpdated ? new Date(currentProjectLedger.lastUpdated).toLocaleString() : 'Not updated yet'}
+            </div>
+            <button
+              onClick={handleMarkWeeklyUpdate}
+              style={{
+                padding: '8px 12px',
+                background: '#2563eb',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: '500',
+              }}
+            >
+              Mark Weekly Update
+            </button>
+            <div style={{ marginTop: '8px', fontSize: '11px', color: '#6b7280', lineHeight: '1.5' }}>
+              Weekly ritual: update current reality, next checkpoint, confidence score, pause stalled work, pick one Building project.
+            </div>
           </div>
         </div>
       </div>
@@ -1750,13 +2443,14 @@ function App() {
           </div>
           <button
             onClick={handleGenerateWorkModeActions}
+            disabled={isExecutionBlocked}
             style={{
               padding: '8px 16px',
-              background: '#2563eb',
-              color: 'white',
+              background: isExecutionBlocked ? '#e5e7eb' : '#2563eb',
+              color: isExecutionBlocked ? '#9ca3af' : 'white',
               border: 'none',
               borderRadius: '8px',
-              cursor: 'pointer',
+              cursor: isExecutionBlocked ? 'not-allowed' : 'pointer',
               fontSize: '13px',
               fontWeight: '500',
             }}
