@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/signalcrypt/generate-batch",
+      "schedule": "0 14 * * 0"
+    }
+  ]
+}
