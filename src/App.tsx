@@ -173,7 +173,7 @@ const SIGNALCRYPT_OUTREACH_SPEC_V1 = `{
     "accountType": "personal",
     "integration": "oauth",
     "dryRun": true,
-    "draftsMode": "INTERNAL_ONLY"
+    "draftsMode": "GMAIL_DRAFTS"
   }
 }`;
 
