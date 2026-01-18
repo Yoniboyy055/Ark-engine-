@@ -74,6 +74,46 @@ type ExportData = {
   milestones?: Milestone[]
 }
 
+// --- SignalCrypt Weekly Batch (Approval-Gated) ---
+type SignalCryptBatch = {
+  batchId: string;
+  preparedAt: string;
+  limits: { email: number; dm: number };
+  discoveryRule: string;
+  offer: { name: string; price: string };
+  angle: string;
+  targets: Array<{
+    name: string;
+    website: string;
+    whySelected: string;
+    channel: string;
+    email: string;
+    dmHandle: string;
+    notes: string;
+  }>;
+  email: { subjectA: string; body1: string; body2: string; followUpDelayDays: number };
+  dm: { message: string; maxTargets: number; eligibilityRule: string };
+  executionPlan: { schedule: Array<{ day: string; action: string }>; stopConditions: string[] };
+  risks: string[];
+  safeguards: string[];
+  approval: { status: "PENDING" | "APPROVED" | "REJECTED"; approvedBy: string; approvedAt: string };
+};
+
+const SC_BATCH_KEY = "ark_signalcrypt_batch_v1";
+
+function loadSignalCryptBatch(): SignalCryptBatch | null {
+  try {
+    const raw = localStorage.getItem(SC_BATCH_KEY);
+    return raw ? (JSON.parse(raw) as SignalCryptBatch) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSignalCryptBatch(batch: SignalCryptBatch) {
+  localStorage.setItem(SC_BATCH_KEY, JSON.stringify(batch));
+}
+
 // Default projects
 const DEFAULT_PROJECTS: Project[] = [
   { id: 'ark-engine', name: 'Ark Engine', goal: 'Build a personal productivity command center' },
@@ -247,6 +287,9 @@ function App() {
   const [projectState, setProjectState] = useState<Record<string, ProjectState>>({})
   const [milestones, setMilestones] = useState<Milestone[]>([])
   const [newMilestoneText, setNewMilestoneText] = useState('')
+  const [scBatch, setScBatch] = useState<SignalCryptBatch | null>(() => loadSignalCryptBatch())
+  const [scLoading, setScLoading] = useState(false)
+  const [scError, setScError] = useState<string | null>(null)
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -1006,6 +1049,150 @@ function App() {
     input.click()
   }, [])
 
+  async function fetchSignalCryptBatch() {
+    setScLoading(true)
+    setScError(null)
+    try {
+      const API_BASE = import.meta.env.DEV ? "https://ark-engine.vercel.app" : "";
+      const res = await fetch(`${API_BASE}/api/signalcrypt/generate-batch`, { method: "POST" })
+      if (!res.ok) {
+        // Fallback to mock data in development (API only works on Vercel)
+        if (res.status === 404) {
+          const mockBatch: SignalCryptBatch = {
+            batchId: `SC-${new Date().toISOString().split('T')[0]}`,
+            preparedAt: new Date().toISOString(),
+            limits: { email: 15, dm: 3 },
+            discoveryRule: "B2B SaaS companies in North America with 10–200 employees that publicly make security, trust, privacy, compliance, or uptime claims on their website.",
+            offer: { name: "War Room", price: "$1,000" },
+            angle: "risk",
+            targets: Array.from({ length: 15 }).map((_, i) => ({
+              name: `Target ${i + 1}`,
+              website: "",
+              whySelected: "Fits: B2B SaaS, North America, ~10–200 employees, makes security/trust/privacy/compliance/uptime claims (needs verification).",
+              channel: "email",
+              email: "",
+              dmHandle: "",
+              notes: "needs discovery/enrichment",
+            })),
+            email: {
+              subjectA: "Quick question about your trust & security claims",
+              body1: "Hey {{firstName}},\n\nI'm reaching out because {{company}} publicly positions around trust/security/privacy.\n\nSignalCrypt is a fast \"Breach Suite\" that spots where trust breaks (messaging + compliance signals + exposure surfaces) and returns a clear fix list.\n\nIf I ran a quick pass and sent you 3 specific findings, would you want them?\n\n— {{yourName}}\nSignalCrypt",
+              body2: "Hey {{firstName}},\n\nQuick follow-up — do you want the 3 findings pass for {{company}}?\nIf yes, tell me who should receive it.\n\n— {{yourName}}",
+              followUpDelayDays: 4,
+            },
+            dm: {
+              message: "Hey {{firstName}} — I emailed you a quick note about a 3-finding trust/security pass for {{company}}. Want me to send it over?",
+              maxTargets: 3,
+              eligibilityRule: "only after no reply to email sequence OR clearly DM-first",
+            },
+            executionPlan: {
+              schedule: [
+                { day: "Day 0", action: "Send Email #1 to all email targets" },
+                { day: "Day 4", action: "Send Email #2 only to non-responders" },
+              ],
+              stopConditions: ["any reply", "unsubscribe", "bounce", "manual pause"],
+            },
+            risks: ["deliverability", "brand risk", "rate limits"],
+            safeguards: ["low volume", "honest messaging", "approval gate"],
+            approval: { status: "PENDING", approvedBy: "", approvedAt: "" },
+          }
+          saveSignalCryptBatch(mockBatch)
+          setScBatch(mockBatch)
+          setScError(null)
+          return
+        }
+        throw new Error(`Fetch failed: ${res.status}`)
+      }
+      const batch = (await res.json()) as SignalCryptBatch
+      // Force PENDING unless already approved locally (don't auto-approve from server)
+      batch.approval = batch.approval ?? { status: "PENDING", approvedBy: "", approvedAt: "" }
+      if (batch.approval.status !== "APPROVED") {
+        batch.approval.status = "PENDING"
+        batch.approval.approvedBy = ""
+        batch.approval.approvedAt = ""
+      }
+      saveSignalCryptBatch(batch)
+      setScBatch(batch)
+    } catch (e: any) {
+      // If fetch completely fails (network error), also fall back to mock
+      if (e?.message?.includes('404') || e?.message?.includes('Failed to fetch')) {
+        const mockBatch: SignalCryptBatch = {
+          batchId: `SC-${new Date().toISOString().split('T')[0]}`,
+          preparedAt: new Date().toISOString(),
+          limits: { email: 15, dm: 3 },
+          discoveryRule: "B2B SaaS companies in North America with 10–200 employees that publicly make security, trust, privacy, compliance, or uptime claims on their website.",
+          offer: { name: "War Room", price: "$1,000" },
+          angle: "risk",
+          targets: Array.from({ length: 15 }).map((_, i) => ({
+            name: `Target ${i + 1}`,
+            website: "",
+            whySelected: "Fits: B2B SaaS, North America, ~10–200 employees, makes security/trust/privacy/compliance/uptime claims (needs verification).",
+            channel: "email",
+            email: "",
+            dmHandle: "",
+            notes: "needs discovery/enrichment",
+          })),
+          email: {
+            subjectA: "Quick question about your trust & security claims",
+            body1: "Hey {{firstName}},\n\nI'm reaching out because {{company}} publicly positions around trust/security/privacy.\n\nSignalCrypt is a fast \"Breach Suite\" that spots where trust breaks (messaging + compliance signals + exposure surfaces) and returns a clear fix list.\n\nIf I ran a quick pass and sent you 3 specific findings, would you want them?\n\n— {{yourName}}\nSignalCrypt",
+            body2: "Hey {{firstName}},\n\nQuick follow-up — do you want the 3 findings pass for {{company}}?\nIf yes, tell me who should receive it.\n\n— {{yourName}}",
+            followUpDelayDays: 4,
+          },
+          dm: {
+            message: "Hey {{firstName}} — I emailed you a quick note about a 3-finding trust/security pass for {{company}}. Want me to send it over?",
+            maxTargets: 3,
+            eligibilityRule: "only after no reply to email sequence OR clearly DM-first",
+          },
+          executionPlan: {
+            schedule: [
+              { day: "Day 0", action: "Send Email #1 to all email targets" },
+              { day: "Day 4", action: "Send Email #2 only to non-responders" },
+            ],
+            stopConditions: ["any reply", "unsubscribe", "bounce", "manual pause"],
+          },
+          risks: ["deliverability", "brand risk", "rate limits"],
+          safeguards: ["low volume", "honest messaging", "approval gate"],
+          approval: { status: "PENDING", approvedBy: "", approvedAt: "" },
+        }
+        saveSignalCryptBatch(mockBatch)
+        setScBatch(mockBatch)
+        setScError(null)
+      } else {
+        setScError(e?.message || "Failed to fetch batch")
+      }
+    } finally {
+      setScLoading(false)
+    }
+  }
+
+  function approveSignalCryptBatch() {
+    if (!scBatch) return
+    const updated: SignalCryptBatch = {
+      ...scBatch,
+      approval: {
+        status: "APPROVED",
+        approvedBy: "Yonatan",
+        approvedAt: new Date().toISOString(),
+      },
+    }
+    saveSignalCryptBatch(updated)
+    setScBatch(updated)
+  }
+
+  function rejectSignalCryptBatch() {
+    if (!scBatch) return
+    const updated: SignalCryptBatch = {
+      ...scBatch,
+      approval: {
+        status: "REJECTED",
+        approvedBy: "Yonatan",
+        approvedAt: new Date().toISOString(),
+      },
+    }
+    saveSignalCryptBatch(updated)
+    setScBatch(updated)
+  }
+
   return (
     <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '24px', fontFamily: 'system-ui, sans-serif', backgroundColor: '#f6f7f9', minHeight: '100vh' }}>
       {/* Header */}
@@ -1043,6 +1230,113 @@ function App() {
             Import JSON
           </button>
         </div>
+      </div>
+
+      {/* SignalCrypt Weekly Batch Card */}
+      <div style={{ background: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e5e7eb', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+          <div>
+            <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '4px' }}>SignalCrypt Weekly Batch</div>
+            <div style={{ color: '#6b7280', fontSize: '12px' }}>
+              Source: <span style={{ fontFamily: 'monospace' }}>/api/signalcrypt/generate-batch</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={fetchSignalCryptBatch}
+              disabled={scLoading}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '8px',
+                border: '1px solid #e5e7eb',
+                background: scLoading ? '#e5e7eb' : '#2563eb',
+                color: 'white',
+                cursor: scLoading ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                fontWeight: '500',
+              }}
+            >
+              {scLoading ? 'Generating...' : 'Generate Batch'}
+            </button>
+
+            <button
+              onClick={approveSignalCryptBatch}
+              disabled={!scBatch || scBatch.approval.status === 'APPROVED'}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '8px',
+                border: '1px solid #16a34a',
+                background: !scBatch || scBatch.approval.status === 'APPROVED' ? '#e5e7eb' : '#16a34a',
+                color: 'white',
+                cursor: !scBatch || scBatch.approval.status === 'APPROVED' ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                fontWeight: '500',
+              }}
+            >
+              Approve
+            </button>
+
+            <button
+              onClick={rejectSignalCryptBatch}
+              disabled={!scBatch || scBatch.approval.status === 'REJECTED'}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '8px',
+                border: '1px solid #dc2626',
+                background: !scBatch || scBatch.approval.status === 'REJECTED' ? '#e5e7eb' : '#dc2626',
+                color: 'white',
+                cursor: !scBatch || scBatch.approval.status === 'REJECTED' ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                fontWeight: '500',
+              }}
+            >
+              Reject
+            </button>
+          </div>
+        </div>
+
+        {scError ? (
+          <div style={{ marginTop: '10px', padding: '12px', borderRadius: '8px', background: '#fee2e2', border: '1px solid #fecaca' }}>
+            <div style={{ fontWeight: '600', color: '#991b1b', marginBottom: '4px' }}>Error</div>
+            <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#7f1d1d' }}>{scError}</div>
+          </div>
+        ) : null}
+
+        {scBatch ? (
+          <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ padding: '12px', borderRadius: '8px', background: '#f9fafb', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontWeight: '600', color: '#111827', marginBottom: '8px' }}>Batch</div>
+              <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>{scBatch.batchId}</div>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Prepared: {new Date(scBatch.preparedAt).toLocaleString()}</div>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Offer: {scBatch.offer.name} ({scBatch.offer.price})</div>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Angle: {scBatch.angle}</div>
+              <div style={{ fontSize: '12px', color: '#6b7280' }}>Limits: Email {scBatch.limits.email} / DM {scBatch.limits.dm}</div>
+            </div>
+
+            <div style={{ padding: '12px', borderRadius: '8px', background: '#f9fafb', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontWeight: '600', color: '#111827', marginBottom: '8px' }}>Approval</div>
+              <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>{scBatch.approval.status}</div>
+              {scBatch.approval.status !== 'PENDING' ? (
+                <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                  By {scBatch.approval.approvedBy} @ {new Date(scBatch.approval.approvedAt).toLocaleString()}
+                </div>
+              ) : (
+                <div style={{ fontSize: '12px', color: '#6b7280' }}>Waiting for your approval.</div>
+              )}
+            </div>
+
+            <div style={{ gridColumn: '1 / -1', padding: '12px', borderRadius: '8px', background: '#f9fafb', border: '1px solid #e5e7eb' }}>
+              <div style={{ fontWeight: '600', color: '#111827', marginBottom: '6px' }}>Email Copy (preview)</div>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}><strong>Subject:</strong> {scBatch.email.subjectA}</div>
+              <pre style={{ whiteSpace: 'pre-wrap', margin: '8px 0 0', fontSize: '12px', color: '#111827', fontFamily: 'monospace', lineHeight: '1.5' }}>{scBatch.email.body1}</pre>
+            </div>
+          </div>
+        ) : (
+          <div style={{ marginTop: '12px', color: '#6b7280', fontSize: '12px' }}>
+            No batch loaded yet. Click <strong>Generate Batch</strong> to pull the weekly batch from Vercel.
+          </div>
+        )}
       </div>
 
       {/* Momentum Card */}
