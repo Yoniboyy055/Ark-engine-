@@ -1,4 +1,5 @@
 // api/signalcrypt/generate-batch.ts
+// Vercel Serverless Function (Node-style). Works for Vite/static deployments.
 
 type Angle = "trust" | "compliance" | "risk" | "speed" | "authority";
 type OfferName = "Flash Breach" | "War Room" | "Retainer";
@@ -15,15 +16,13 @@ function slugDate(d = new Date()) {
 }
 
 function buildTemplateTargets(count: number) {
-  // IMPORTANT: we do NOT fabricate emails.
-  // This returns placeholders so you can plug in a real "finder" later (search API / enrichment).
   return Array.from({ length: count }).map((_, i) => ({
     name: `Target ${i + 1}`,
     website: "",
     whySelected:
       "Fits: B2B SaaS, North America, ~10–200 employees, makes security/trust/privacy/compliance/uptime claims (needs verification).",
     channel: "email",
-    email: "",
+    email: "", // never fabricate emails
     dmHandle: "",
     notes: "needs discovery/enrichment",
   }));
@@ -77,34 +76,17 @@ function makeBatch() {
   };
 }
 
-export default function handler(req: { method?: string; url?: string }) {
+export default function handler(req: any, res: any) {
   try {
-    const method = req.method || "GET";
-    
-    if (method === "GET" || method === "POST") {
-      return new Response(JSON.stringify(makeBatch()), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+    if (req.method !== "GET" && req.method !== "POST") {
+      res.status(405).json({ error: "Method Not Allowed" });
+      return;
     }
-    
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: {
-        "Content-Type": "application/json",
-      },
+    res.status(200).json(makeBatch());
+  } catch (e: any) {
+    res.status(500).json({
+      error: "generate-batch crashed",
+      message: e?.message || String(e),
     });
-  } catch (error) {
-    return new Response(
-      JSON.stringify({ error: "Internal server error", details: String(error) }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
   }
 }
