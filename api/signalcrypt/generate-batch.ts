@@ -77,14 +77,34 @@ function makeBatch() {
   };
 }
 
-export function GET() {
-  // Cron Jobs trigger with GET requests.
-  return Response.json(makeBatch(), { status: 200 });
-}
-
-export async function POST(req: Request) {
-  // Allows manual button click in the app.
-  // You can later accept filters in body (industry, region overrides, etc).
-  void req; // keep lint happy
-  return Response.json(makeBatch(), { status: 200 });
+export default function handler(req: { method?: string; url?: string }) {
+  try {
+    const method = req.method || "GET";
+    
+    if (method === "GET" || method === "POST") {
+      return new Response(JSON.stringify(makeBatch()), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+    
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: "Internal server error", details: String(error) }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  }
 }
