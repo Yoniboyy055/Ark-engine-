@@ -1763,19 +1763,9 @@ function App() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <label style={{ fontWeight: '600', fontSize: '13px', color: '#6b7280' }}>Project</label>
-            {currentProject?.category && (
-              <span
-                style={{
-                  padding: '3px 10px',
-                  background: currentProject.category === 'Sacred' ? '#0f766e' : '#2563eb',
-                  color: 'white',
-                  borderRadius: '999px',
-                  fontSize: '10px',
-                  fontWeight: '700',
-                  letterSpacing: '0.5px',
-                }}
-              >
-                {currentProject.category.toUpperCase()}
+            {isSacredProject && (
+              <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 999, border: '1px solid #999' }}>
+                Sacred
               </span>
             )}
             {isProjectPaused && (
