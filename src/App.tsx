@@ -299,8 +299,60 @@ const mergeProjects = (storedProjects: Project[]): Project[] => {
   return merged
 }
 
+const PROJECT_STATE_OVERRIDES: Record<string, Partial<ProjectState>> = {
+  surplus: {
+    stage: 'Planning',
+  },
+}
+
+const PROJECT_LEDGER_OVERRIDES: Record<string, Partial<ProjectLedger>> = {
+  surplus: {
+    mission:
+      'Build a private, referral-driven system that matches serious buyers to overlooked surplus properties using information advantage — not public listings.',
+    oneSentenceGoal: 'Validate buyer demand and referral flow before building infrastructure.',
+    currentReality:
+      'The full surplus referral system is designed on paper, but no live landing page or real buyer intake exists yet.',
+    nextFocus: 'Ship a simple surplus landing page with referral tracking and buyer intake.',
+    whatIsDone:
+      '- End-to-end surplus referral system designed and locked\n- Deal lifecycle, incentives, protections fully defined\n- No execution started by design',
+    whatIsWorking:
+      '- System design is clear and internally consistent\n- Execution intentionally paused to avoid premature build',
+    whatIsBroken: '- No live entry point for buyers or referrers yet',
+    whatIsMissing: '- Public landing page\n- First real buyer submissions\n- Signal validation',
+    assets: '- Ark Engine Command Center\n- Surplus system design spec (written)\n- Vercel deployment',
+    constraints: '- Time\n- Need for clarity before execution\n- Avoiding premature automation',
+    automationStatus: 'Not active — awaiting landing page validation',
+    killCriteria: 'If no real buyer interest after landing page + outreach, system is paused or reframed.',
+    confidenceScore: 2,
+  },
+}
+
+const applyProjectStateOverrides = (state: Record<string, ProjectState>): Record<string, ProjectState> => {
+  const nextState = { ...state }
+  Object.entries(PROJECT_STATE_OVERRIDES).forEach(([projectId, override]) => {
+    if (!nextState[projectId]) return
+    nextState[projectId] = {
+      ...nextState[projectId],
+      ...override,
+    }
+  })
+  return nextState
+}
+
+const applyProjectLedgerOverrides = (ledger: Record<string, ProjectLedger>): Record<string, ProjectLedger> => {
+  const nextLedger = { ...ledger }
+  Object.entries(PROJECT_LEDGER_OVERRIDES).forEach(([projectId, override]) => {
+    if (!nextLedger[projectId]) return
+    nextLedger[projectId] = {
+      ...nextLedger[projectId],
+      ...override,
+    }
+  })
+  return nextLedger
+}
+
 const createDefaultProjectState = (): Record<string, ProjectState> => {
-  return DEFAULT_PROJECTS.reduce<Record<string, ProjectState>>((acc, project) => {
+  const baseState = DEFAULT_PROJECTS.reduce<Record<string, ProjectState>>((acc, project) => {
     acc[project.id] = {
       stage: 'Planning',
       blockers: '',
@@ -308,10 +360,11 @@ const createDefaultProjectState = (): Record<string, ProjectState> => {
     }
     return acc
   }, {})
+  return applyProjectStateOverrides(baseState)
 }
 
 const createDefaultProjectLedger = (): Record<string, ProjectLedger> => {
-  return DEFAULT_PROJECTS.reduce<Record<string, ProjectLedger>>((acc, project) => {
+  const baseLedger = DEFAULT_PROJECTS.reduce<Record<string, ProjectLedger>>((acc, project) => {
     acc[project.id] = {
       mission: '',
       oneSentenceGoal: project.goal,
@@ -330,6 +383,7 @@ const createDefaultProjectLedger = (): Record<string, ProjectLedger> => {
     }
     return acc
   }, {})
+  return applyProjectLedgerOverrides(baseLedger)
 }
 
 const uid = (): string => {
@@ -559,8 +613,8 @@ function App() {
     setEnergy(storedSettings.energy)
     setWorkMode(storedWorkMode)
     setWorkModeOutputs(storedWorkModeOutputs)
-    setProjectState(finalProjectState)
-    setProjectLedger(finalProjectLedger)
+    setProjectState(applyProjectStateOverrides(finalProjectState))
+    setProjectLedger(applyProjectLedgerOverrides(finalProjectLedger))
     setMilestones(finalMilestones)
     if (storedBrief) {
       setDailyBrief(storedBrief)
